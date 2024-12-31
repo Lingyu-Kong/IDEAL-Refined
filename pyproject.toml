@@ -1,0 +1,58 @@
+[project]
+name = "ideal"
+version = "0.1.0"
+description = ""
+authors = [{ name = "Lingyu Kong", email = "kongly677@gmail.com" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "ase>=3.23.0",
+    "e3nn==0.5.0",
+    "seekpath",
+    "numpy<2",
+    "pymatgen",
+    "torch==2.2.0",
+    "torchvision==0.17.0",
+    "torchaudio==2.2.0",
+    "torch_runstats==0.2.0",
+    "torch_geometric==2.5.3",
+    "torchmetrics>=0.10.0",
+    "torch-ema==0.3",
+    "opt_einsum_fx",
+    "pydantic>=2.9.2",
+    "dscribe>=1.2.2",
+    "multiprocess",
+    "matplotlib",
+    "wandb",
+    "scikit_learn>=1.2.0",
+    "scipy>=1.9.1",
+    "lightning",
+    "tqdm",
+    "prettytable",
+    "loguru",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pre-commit", "ruff"]
+
+[build-system]
+requires = ["setuptools>=45", "wheel", "Cython>=0.29.32", "numpy<2", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[tool.pyright]
+typeCheckingMode = "standard"
+deprecateTypingAliases = true
+strictListInference = true
+strictDictionaryInference = true
+strictSetInference = true
+reportPrivateImportUsage = false
+reportMatchNotExhaustive = "error"
+reportImplicitOverride = "warning"
+reportShadowedImports = "warning"
+
+[tool.ruff.lint]
+select = ["FA102", "FA100", "F401"]
+ignore = ["F722", "F821", "E731", "E741"]
+
+[tool.ruff.lint.isort]
+required-imports = ["from __future__ import annotations"]

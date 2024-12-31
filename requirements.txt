@@ -1,0 +1,6 @@
+torch
+ase
+scikit-learn
+lightning
+numpy
+torchmetrics

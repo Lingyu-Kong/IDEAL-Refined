@@ -1,0 +1,222 @@
+from __future__ import annotations
+
+import argparse
+import os
+import time
+
+import torch
+from ase import Atoms
+from ase.io import read, write
+from ase.md.langevin import Langevin
+from typing_extensions import cast
+
+from ideal.abinitio_interfaces.vasp import VaspFakeInterface
+from ideal.ideal_calculator import (
+    IDEALCalculator,
+    IDEALModelTuningConfig,
+    ImportanceSamplingConfig,
+)
+from ideal.models.potential import Potential
+from ideal.subsampler.cut_strategy import CSCECutStrategyCatalyst
+from ideal.subsampler.sampler import SubSampler, UncThresholdConfig
+from ideal.subsampler.sub_optimizer import UncGradientOptimizer
+from ideal.subsampler.unc_module import KernelCoreIncremental
+from ideal.subsampler.unc_module.unc_gk import SoapCompressConfig, SoapGK
+from ideal.utils.habor_bosch import get_surface_indices
+
+
+def main(args_dict: dict):
+    def get_calculator():
+        # Load the structure
+        atoms: Atoms = read(args_dict["file"])  # type: ignore
+        species = set(atoms.get_chemical_symbols())
+        surface_indices = get_surface_indices(
+            atoms, particle_elements=list(species - set(["H", "N"]))
+        )
+
+        # Define the subsampling strategy
+        unc_model = SoapGK(
+            soap_cutoff=args_dict["soap_cutoff"],
+            max_l=args_dict["max_l"],
+            max_n=args_dict["max_n"],
+            species=list(species),
+            compress_method=SoapCompressConfig(
+                mode=args_dict["soap_compress"], species_weighting=None
+            ),
+            kernel_cls=KernelCoreIncremental,
+            soap_normalization=args_dict["soap_normalization"],
+            supercell_size=args_dict["soap_supercell_size"],
+            n_jobs=args_dict["n_jobs"],
+        )
+        sub_optimizer = UncGradientOptimizer(
+            max_steps=args_dict["sub_opt_max_steps"],
+            lr=args_dict["sub_opt_lr"],
+            optimizer=args_dict["sub_opt_optimizer"],
+            scheduler=args_dict["sub_opt_scheduler"],
+            early_stop=args_dict["sub_opt_early_stop"],
+            early_stop_patience=args_dict["sub_opt_early_stop_patience"],
+            noise=args_dict["sub_opt_noise"],
+            noise_decay=args_dict["sub_opt_noise_decay"],
+        )
+        cut_strategy = CSCECutStrategyCatalyst(
+            method="ideal",
+            sub_cutoff=args_dict["sub_cutoff"],
+            cell_extend_max=args_dict["cell_extend_max"],
+            cell_extend_zpos_min=args_dict["cell_extend_zpos_min"],
+            cell_extend_zpos_max=args_dict["cell_extend_zpos_max"],
+            cut_scan_granularity=args_dict["cut_scan_granularity"],
+            num_process=args_dict["num_process"],
+            max_num_rs=args_dict["max_num_rs"],
+        )
+        sub_sampler = SubSampler(
+            species=list(species),
+            unc_model=unc_model,
+            unc_threshold_config=UncThresholdConfig(
+                window_size=args_dict["unc_threshold_window_size"],
+                alpha=args_dict["unc_threshold_alpha"],
+                beta=args_dict["unc_threshold_beta"],
+                k=args_dict["unc_threshold_k"],
+            ),
+            sub_optimizer=sub_optimizer,
+            cut_strategy=cut_strategy,
+        )
+
+        # Construct the IDEAL calculator
+        abinitio_interface = VaspFakeInterface(
+            vasp_cmd=f"mpirun -np {args_dict['vasp_npar']} vasp_gam",
+        )
+        potential = Potential.from_checkpoint(
+            load_path=args_dict["potential"],
+            # devide=f"cuda:{args_dict['cuda_device_idx']}",
+        )
+        calculator = IDEALCalculator(
+            potential=potential,
+            sub_sampler=sub_sampler,
+            abinitio_interface=abinitio_interface,
+            include_indices=surface_indices,
+            compute_stress=False,
+            precision=args_dict["model_precision"],
+            importance_sampling=cast(
+                ImportanceSamplingConfig,
+                {
+                    "temperature": args_dict["IS_temperature"],
+                    "temperature_decay": args_dict["IS_temperature_decay"],
+                    "min_temperature": args_dict["IS_temperature_min"],
+                    "key": args_dict["IS_key"],
+                },
+            ),
+            model_tuning_config=cast(
+                IDEALModelTuningConfig,
+                {
+                    "max_epochs": args_dict["model_max_epochs"],
+                    "batch_size": args_dict["model_batch_size"],
+                    "learning_rate": args_dict["model_lr"],
+                    "optimizer": args_dict["model_optimizer"],
+                    "scheduler": args_dict["model_scheduler"],
+                    "loss": torch.nn.MSELoss(),
+                    "include_energy": True,
+                    "include_forces": True,
+                    "include_stresses": False,
+                    "force_loss_ratio": 1.0,
+                    "stress_loss_ratio": 0.0,
+                },
+            ),
+        )
+        initialize_atoms_list = read(args_dict["initialize_dataset"], ":")
+        calculator.initialize(initialize_atoms_list)  # type: ignore
+
+        return calculator
+
+    atoms: Atoms = read(args_dict["file"])  # type: ignore
+    calc = get_calculator()
+    atoms.set_calculator(calc)
+
+    # Run the MD simulation
+    dyn = Langevin(
+        atoms,
+        temperature_K=args_dict["temperature"],
+        timestep=args_dict["timestep"],
+        friction=args_dict["friction"],
+        fixcm=True,
+    )
+    traj_file = args_dict["file"].replace(".xyz", "_md.xyz")
+    if os.path.exists(traj_file):
+        os.remove(traj_file)
+
+    def log_traj():
+        current_step = dyn.get_number_of_steps()
+        print(f"Step {current_step} / {args_dict['md_steps']}")
+        write(traj_file, atoms, append=True)
+
+    dyn.attach(log_traj, interval=args_dict["loginterval"])
+    dyn.run(args_dict["md_steps"])
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Subsample a slab")
+    parser.add_argument(
+        "--file",
+        type=str,
+        default="../../contents/habor-bosch/Fe939-K50-semi_embedded-326atmH2-326atmN2.xyz",
+    )
+    # Uncertainty model configuration
+    parser.add_argument("--soap_cutoff", type=float, default=3.5)
+    parser.add_argument("--max_l", type=int, default=4)
+    parser.add_argument("--max_n", type=int, default=4)
+    parser.add_argument("--soap_compress", type=str, default="mu2")
+    parser.add_argument("--soap_normalization", type=str, default="l2")
+    parser.add_argument("--soap_supercell_size", type=int, default=3)
+    parser.add_argument("--n_jobs", type=int, default=1)
+    # Subsampling optimizer configuration
+    parser.add_argument("--sub_opt_max_steps", type=int, default=200)
+    parser.add_argument("--sub_opt_lr", type=float, default=0.1)
+    parser.add_argument("--sub_opt_optimizer", type=str, default="adam")
+    parser.add_argument("--sub_opt_scheduler", type=str, default="cosine")
+    parser.add_argument("--sub_opt_early_stop", type=bool, default=True)
+    parser.add_argument("--sub_opt_early_stop_patience", type=int, default=100)
+    parser.add_argument("--sub_opt_noise", type=float, default=0.0)
+    parser.add_argument("--sub_opt_noise_decay", type=float, default=1.0)
+    parser.add_argument("--sub_opt_grad_clip", type=float, default=1.0)
+    # Cut strategy configuration
+    parser.add_argument("--sub_cutoff", type=float, default=4.5)
+    parser.add_argument("--cell_extend_max", type=float, default=1.5)
+    parser.add_argument("--cell_extend_zpos_min", type=float, default=0.0)
+    parser.add_argument("--cell_extend_zpos_max", type=float, default=2.0)
+    parser.add_argument("--cut_scan_granularity", type=float, default=0.5)
+    parser.add_argument("--num_process", type=int, default=16)
+    parser.add_argument("--max_num_rs", type=int, default=1500)
+    ## Uncertainty threshold configuration
+    parser.add_argument("--unc_threshold_window_size", type=int, default=10000)
+    parser.add_argument("--unc_threshold_alpha", type=float, default=0.5)
+    parser.add_argument("--unc_threshold_beta", type=float, default=0.9)
+    parser.add_argument("--unc_threshold_k", type=float, default=2.0)
+    # VASP configuration
+    parser.add_argument("--vasp_npar", type=int, default=16)
+    # Model configuration
+    parser.add_argument("--potential", type=str, default="MatterSim-v1.0.0-1M")
+    parser.add_argument("--cuda_device_idx", type=int, default=3)
+    parser.add_argument("--IS_temperature", type=float, default=2.0)
+    parser.add_argument("--IS_temperature_decay", type=float, default=0.05)
+    parser.add_argument("--IS_temperature_min", type=float, default=0.1)
+    parser.add_argument("--IS_key", type=str, default="f_mae")
+    parser.add_argument("--model_max_epochs", type=int, default=5)
+    parser.add_argument("--model_batch_size", type=int, default=32)
+    parser.add_argument("--model_lr", type=float, default=1e-4)
+    parser.add_argument("--model_optimizer", type=str, default="adam")
+    parser.add_argument("--model_scheduler", type=str, default="cosine")
+    parser.add_argument("--model_precision", type=str, default="fp32")
+    # MD configuration
+    parser.add_argument("--timestep", type=float, default=0.5)
+    parser.add_argument("--temperature", type=float, default=1800.0)
+    parser.add_argument("--friction", type=float, default=0.02)
+    parser.add_argument("--md_steps", type=int, default=100)
+    parser.add_argument("--loginterval", type=int, default=20)
+    parser.add_argument(
+        "--initialize_dataset", type=str, default="../../contents/habor-bosch/init.xyz"
+    )
+    args = parser.parse_args()
+    args_dict = vars(args)
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(args_dict["cuda_device_idx"])
+
+    main(args_dict)

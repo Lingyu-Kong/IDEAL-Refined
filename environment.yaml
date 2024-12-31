@@ -1,0 +1,15 @@
+name: ideal
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - ca-certificates
+  - openssl
+  - numpy<2
+  - phonopy==2.14.0
+  - phono3py==2.3.0
+  - cython>=0.29.32
+  - setuptools>=45
+  - wheel
+  - pip:
+    - uv
