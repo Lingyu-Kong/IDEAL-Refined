@@ -9,6 +9,7 @@ import ase.neighborlist as nl
 import numpy as np
 from ase import Atoms
 from ase.data import chemical_symbols, covalent_radii
+import torch
 
 
 def _rotate_to_z(
@@ -207,3 +208,92 @@ def get_gas_indices(
                 gas_indices.append(i)
 
     return gas_indices
+
+
+import torch
+import math
+
+def compute_FeNH_coordination(atoms):
+    positions = torch.as_tensor(atoms.get_positions(), dtype=torch.float32)
+    atomic_numbers = torch.as_tensor(atoms.get_atomic_numbers(), dtype=torch.int64)
+    box = torch.as_tensor(atoms.get_cell().lengths(), dtype=torch.float32)
+
+    # 构造对角线形式的盒子张量(只适用于正交晶胞)
+    cell = torch.diag(box)
+
+    # 构建周期性平移向量 (立方体 3D 网格, -1, 0, 1)
+    mesh_grid = (
+        torch.stack(
+            torch.meshgrid(
+                torch.arange(-1, 2),
+                torch.arange(-1, 2),
+                torch.arange(-1, 2),
+                indexing="ij",
+            ),
+            dim=-1,
+        )
+        .view([-1, 1, 3])
+        .float()
+    )
+    shift_vectors = torch.matmul(mesh_grid, cell)
+
+    # positions.shape: (n_atoms, 3)
+    # shift_vectors.shape: (27, 1, 3)
+    # positions + shift_vectors.shape: (27, n_atoms, 3)
+    # dist_mat: (n_atoms, 27*n_atoms) 在 cdist 后再取 min 即可得到包含 PBC 的最小距离
+    dist_mat = torch.cdist(positions, positions + shift_vectors).min(dim=2).values
+    # dist_mat 结果为 (n_atoms, n_atoms): 每个原子对 (i, j) 的最小距离(考虑 PBC)
+
+    # 建立原子 mask
+    N_mask  = (atomic_numbers == 7)
+    H_mask  = (atomic_numbers == 1)
+    Fe_mask = (atomic_numbers == 26)
+
+    n_atoms = len(atomic_numbers)
+
+    # 用 ~torch.eye(...) 来排除 i==j 的自距离
+    not_self = ~torch.eye(n_atoms, dtype=torch.bool)
+
+    NH_mask = (
+        N_mask.unsqueeze(1) &
+        H_mask.unsqueeze(0) &
+        not_self
+    )
+    FeN_mask = (
+        Fe_mask.unsqueeze(1) &
+        N_mask.unsqueeze(0) &
+        not_self
+    )
+    FeH_mask = (
+        Fe_mask.unsqueeze(1) &
+        H_mask.unsqueeze(0) &
+        not_self
+    )
+    NN_mask = (
+        N_mask.unsqueeze(1) &
+        N_mask.unsqueeze(0) &
+        not_self
+    )
+    HH_mask = (
+        H_mask.unsqueeze(1) &
+        H_mask.unsqueeze(0) &
+        not_self
+    )
+
+    # 定义合理的截断半径 (单位 Å)，以下仅为示例值
+    nh_cut  = 1.2
+    fen_cut = 2.2
+    feh_cut = 1.8
+    nn_cut  = 1.5
+    hh_cut  = 0.9
+
+    # 统计各个成键数
+    # dist_mat < cutoff 会返回一个 (n_atoms, n_atoms) 的布尔矩阵，再根据 mask 筛选
+    # 然后 sum(dim=1) 后，对于属于该元素的原子再聚合求和
+    NH_coor  = torch.sum(torch.sum((dist_mat < nh_cut) & NH_mask,  dim=1)[N_mask].float())
+    FeN_coor = torch.sum(torch.sum((dist_mat < fen_cut) & FeN_mask, dim=1)[Fe_mask].float())
+    FeH_coor = torch.sum(torch.sum((dist_mat < feh_cut) & FeH_mask, dim=1)[Fe_mask].float())
+    NN_coor  = torch.sum(torch.sum((dist_mat < nn_cut) & NN_mask,  dim=1)[N_mask].float())
+    HH_coor  = torch.sum(torch.sum((dist_mat < hh_cut) & HH_mask,  dim=1)[H_mask].float())
+
+    return NH_coor, FeN_coor, FeH_coor, NN_coor, HH_coor

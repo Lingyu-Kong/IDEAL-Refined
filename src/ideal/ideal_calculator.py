@@ -116,7 +116,7 @@ class IDEALCalculator(Calculator):
         if self.model_tuning_config["scheduler"].lower() == "steplr":
             scheduler = torch.optim.lr_scheduler.StepLR(
                 optimizer,
-                gamma=0.9,
+                gamma=0.8,
                 step_size=10,
             )
         elif self.model_tuning_config["scheduler"].lower() == "cosine":
@@ -128,7 +128,7 @@ class IDEALCalculator(Calculator):
 
         self.potential.scheduler = scheduler
 
-    def _model_tune(self, atoms_list: list[Atoms]):
+    def _model_tune(self, atoms_list: list[Atoms], max_epochs: int|None=None):
         """
         This function is used to tune the model
         """
@@ -153,7 +153,9 @@ class IDEALCalculator(Calculator):
             [0] * len(atoms_list),
             [0] * len(atoms_list),
         )
-        for epoch in range(self.model_tuning_config["max_epochs"]):
+        if max_epochs is None:
+            max_epochs = self.model_tuning_config["max_epochs"]
+        for epoch in range(max_epochs):
             loss_avg_, e_mae, f_mae, s_mae = self.potential.train_one_epoch(
                 dataloader=dataloader,
                 epoch=epoch,
@@ -168,11 +170,12 @@ class IDEALCalculator(Calculator):
                 log=False,
                 reduction="none",
             )
+            self.potential.scheduler.step() # type: ignore
             e_mae_mean = np.mean(e_mae).item()
             f_mae_mean = np.mean(f_mae).item()
             s_mae_mean = np.mean(s_mae).item()
             print(
-                f"Epoch: {epoch}/{self.model_tuning_config['max_epochs']}, Loss: {loss_avg_:.4f}, Energy MAE: {e_mae_mean:.4f}, Force MAE: {f_mae_mean:.4f}, Stress MAE: {s_mae_mean:.4f}"
+                f"Epoch: {epoch}/{max_epochs}, Loss: {loss_avg_:.4f}, Energy MAE: {e_mae_mean:.4f}, Force MAE: {f_mae_mean:.4f}, Stress MAE: {s_mae_mean:.4f}"
             )
         # Evaluate the model on the dataset
         return loss_, e_mae, f_mae, s_mae
@@ -219,7 +222,7 @@ class IDEALCalculator(Calculator):
         data_indices = list(range(len(atoms_list)))
         shuffle_indices = np.random.permutation(data_indices)
         loss_, e_mae, f_mae, s_mae = self._model_tune(
-            [self.data_buffer[i] for i in shuffle_indices]
+            [self.data_buffer[i] for i in shuffle_indices], max_epochs=200
         )
         self._error_buffer_update(shuffle_indices, e_mae, f_mae, s_mae)
         for atoms in atoms_list:
@@ -357,17 +360,17 @@ class IDEALCalculator(Calculator):
         if self.wandb_log:
             wandb.log(
                 {
-                    "Time/sub_sample_time": sub_sample_time,
-                    "Time/sub_label_time": sub_label_time,
-                    "Time/model_tune_time": model_tune_time,
-                    "Time/single_point_time": single_point_time,
-                    "Time/sub_sample_time_per_sub": sub_sample_time / len(subs)
+                    "IDEAL-Calc-Time/sub_sample_time": sub_sample_time,
+                    "IDEAL-Calc-Time/sub_label_time": sub_label_time,
+                    "IDEAL-Calc-Time/model_tune_time": model_tune_time,
+                    "IDEAL-Calc-Time/single_point_time": single_point_time,
+                    "IDEAL-Calc-Time/sub_sample_time_per_sub": sub_sample_time / len(subs)
                     if len(subs) > 0
                     else 0,
-                    "Time/sub_label_time_per_sub": sub_label_time / len(subs)
+                    "IDEAL-Calc-Time/sub_label_time_per_sub": sub_label_time / len(subs)
                     if len(subs) > 0
                     else 0,
-                    "Time/model_tune_time_per_sub": model_tune_time / len(subs)
+                    "IDEAL-Calc-Time/model_tune_time_per_sub": model_tune_time / len(subs)
                     if len(subs) > 0
                     else 0,
                 }

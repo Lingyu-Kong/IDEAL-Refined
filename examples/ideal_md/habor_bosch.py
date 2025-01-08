@@ -5,12 +5,13 @@ import os
 import time
 
 import torch
+import wandb
 from ase import Atoms
 from ase.io import read, write
 from ase.md.langevin import Langevin
 from typing_extensions import cast
 
-from ideal.abinitio_interfaces.vasp import VaspFakeInterface
+from ideal.abinitio_interfaces.vasp import VaspInterface
 from ideal.ideal_calculator import (
     IDEALCalculator,
     IDEALModelTuningConfig,
@@ -22,7 +23,7 @@ from ideal.subsampler.sampler import SubSampler, UncThresholdConfig
 from ideal.subsampler.sub_optimizer import UncGradientOptimizer
 from ideal.subsampler.unc_module import KernelCoreIncremental
 from ideal.subsampler.unc_module.unc_gk import SoapCompressConfig, SoapGK
-from ideal.utils.habor_bosch import get_surface_indices
+from ideal.utils.habor_bosch import compute_FeNH_coordination, get_surface_indices
 
 
 def main(args_dict: dict):
@@ -82,12 +83,35 @@ def main(args_dict: dict):
         )
 
         # Construct the IDEAL calculator
-        abinitio_interface = VaspFakeInterface(
+        abinitio_interface = VaspInterface(
+            user_incar_settings={
+                "IBRION": -1,  # 不进行离子弛豫
+                "ENCUT": 400,  # 能量截止
+                "EDIFF": 1e-3,  # 电子收敛标准
+                "ISMEAR": 2,  # 施密尔方法
+                "SIGMA": 0.05,  # Fermi 展宽
+                "Accuracy": "Normal",
+                "PREC": "Normal",  # 计算精度
+                "ISPIN": 2,  # 开启自旋极化
+                "LCHARGE": False,  # 不输出 CHGCAR
+                "ISYM": -1,  # 关闭对称性
+                "LREAL": "Auto",  # 自动选择是否使用实空间表示（兼顾效率和精度）
+                "NSW": 1,  # 不进行离子弛豫
+                "MAGMOM": {
+                    "Fe": 4.0,
+                    "K": 0.0,
+                    "N": 0.0,
+                    "H": 0.0,
+                },
+            },
+            user_kpoints_settings={
+                "reciprocal_density": 1.0,
+                "kpoints_scheme": "Gamma",  # 仍使用 Gamma 定心网格
+            },
             vasp_cmd=f"mpirun -np {args_dict['vasp_npar']} vasp_gam",
         )
         potential = Potential.from_checkpoint(
             load_path=args_dict["potential"],
-            # devide=f"cuda:{args_dict['cuda_device_idx']}",
         )
         calculator = IDEALCalculator(
             potential=potential,
@@ -96,6 +120,7 @@ def main(args_dict: dict):
             include_indices=surface_indices,
             compute_stress=False,
             precision=args_dict["model_precision"],
+            wandb_log=args_dict["wandb"],
             importance_sampling=cast(
                 ImportanceSamplingConfig,
                 {
@@ -117,7 +142,7 @@ def main(args_dict: dict):
                     "include_energy": True,
                     "include_forces": True,
                     "include_stresses": False,
-                    "force_loss_ratio": 1.0,
+                    "force_loss_ratio": 10.0,
                     "stress_loss_ratio": 0.0,
                 },
             ),
@@ -146,9 +171,27 @@ def main(args_dict: dict):
     def log_traj():
         current_step = dyn.get_number_of_steps()
         print(f"Step {current_step} / {args_dict['md_steps']}")
-        write(traj_file, atoms, append=True)
+        NH_coor, FeN_coor, FeH_coor, NN_coor, HH_coor = compute_FeNH_coordination(atoms)
+        if args_dict["wandb"]:
+            wandb.log(
+                {
+                    "NH_coor": NH_coor,
+                    "FeN_coor": FeN_coor,
+                    "FeH_coor": FeH_coor,
+                    "NN_coor": NN_coor,
+                    "HH_coor": HH_coor,
+                    "MD Time": current_step * args_dict["timestep"] / 1000, # ps
+                },
+                step=current_step,
+            )
+        write(traj_file, dyn.atoms, append=True)
 
     dyn.attach(log_traj, interval=args_dict["loginterval"])
+
+    if args_dict["wandb"]:
+        wandb.login(key="37f3de06380e350727df28b49712f8b7fe5b14aa")
+        wandb.init(project="IDEAL-MD", config=args_dict, name="Habor-Bosch")
+
     dyn.run(args_dict["md_steps"])
 
 
@@ -173,7 +216,7 @@ if __name__ == "__main__":
     parser.add_argument("--sub_opt_optimizer", type=str, default="adam")
     parser.add_argument("--sub_opt_scheduler", type=str, default="cosine")
     parser.add_argument("--sub_opt_early_stop", type=bool, default=True)
-    parser.add_argument("--sub_opt_early_stop_patience", type=int, default=100)
+    parser.add_argument("--sub_opt_early_stop_patience", type=int, default=50)
     parser.add_argument("--sub_opt_noise", type=float, default=0.0)
     parser.add_argument("--sub_opt_noise_decay", type=float, default=1.0)
     parser.add_argument("--sub_opt_grad_clip", type=float, default=1.0)
@@ -184,7 +227,7 @@ if __name__ == "__main__":
     parser.add_argument("--cell_extend_zpos_max", type=float, default=2.0)
     parser.add_argument("--cut_scan_granularity", type=float, default=0.5)
     parser.add_argument("--num_process", type=int, default=16)
-    parser.add_argument("--max_num_rs", type=int, default=1500)
+    parser.add_argument("--max_num_rs", type=int, default=200)
     ## Uncertainty threshold configuration
     parser.add_argument("--unc_threshold_window_size", type=int, default=10000)
     parser.add_argument("--unc_threshold_alpha", type=float, default=0.5)
@@ -194,26 +237,31 @@ if __name__ == "__main__":
     parser.add_argument("--vasp_npar", type=int, default=16)
     # Model configuration
     parser.add_argument("--potential", type=str, default="MatterSim-v1.0.0-1M")
-    parser.add_argument("--cuda_device_idx", type=int, default=3)
+    parser.add_argument("--cuda_device_idx", type=int, default=0)
     parser.add_argument("--IS_temperature", type=float, default=2.0)
     parser.add_argument("--IS_temperature_decay", type=float, default=0.05)
     parser.add_argument("--IS_temperature_min", type=float, default=0.1)
     parser.add_argument("--IS_key", type=str, default="f_mae")
-    parser.add_argument("--model_max_epochs", type=int, default=5)
+    parser.add_argument("--model_max_epochs", type=int, default=60)
     parser.add_argument("--model_batch_size", type=int, default=32)
     parser.add_argument("--model_lr", type=float, default=1e-4)
     parser.add_argument("--model_optimizer", type=str, default="adam")
-    parser.add_argument("--model_scheduler", type=str, default="cosine")
+    parser.add_argument("--model_scheduler", type=str, default="steplr")
     parser.add_argument("--model_precision", type=str, default="fp32")
     # MD configuration
     parser.add_argument("--timestep", type=float, default=0.5)
     parser.add_argument("--temperature", type=float, default=1800.0)
     parser.add_argument("--friction", type=float, default=0.02)
-    parser.add_argument("--md_steps", type=int, default=100)
+    parser.add_argument("--md_steps", type=int, default=40000)
     parser.add_argument("--loginterval", type=int, default=20)
+    ## Initialize Dataset
     parser.add_argument(
-        "--initialize_dataset", type=str, default="../../contents/habor-bosch/init.xyz"
+        "--initialize_dataset",
+        type=str,
+        default="../../contents/habor-bosch/init_Jan_08.xyz",
     )
+    ## Wandb
+    parser.add_argument("--wandb", action="store_true")
     args = parser.parse_args()
     args_dict = vars(args)
 

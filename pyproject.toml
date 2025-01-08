@@ -19,7 +19,7 @@ dependencies = [
     "torchmetrics>=0.10.0",
     "torch-ema==0.3",
     "opt_einsum_fx",
-    "pydantic>=2.9.2",
+    "pydantic",
     "dscribe>=1.2.2",
     "multiprocess",
     "matplotlib",
@@ -30,6 +30,7 @@ dependencies = [
     "tqdm",
     "prettytable",
     "loguru",
+    "pybtex",
 ]
 
 [project.optional-dependencies]

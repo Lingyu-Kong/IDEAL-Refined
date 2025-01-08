@@ -1,0 +1,26 @@
+Uncertainty thresholds: {'Fe': 2.9448612394105638, 'N': 2.0, 'H': 9.22355297057143, 'K': 15.550019115171853}
+Sampled 18 local environments
+Cutting: 18/18 in 115.53s, Size: 39
+Cut 18 substructures in 115.53s, Average size: 48.50
+Optimized substructure: 1/18, [93.95->93.95, 0.00] in 5.45s
+Optimized substructure: 2/18, [36.56->36.56, 0.00] in 15.26s
+Optimized substructure: 3/18, [8.11->7.23, 0.11] in 25.07s
+Optimized substructure: 4/18, [13.54->13.54, 0.00] in 31.38s
+Optimized substructure: 5/18, [18.89->9.46, 0.50] in 39.19s
+Optimized substructure: 6/18, [13.40->10.36, 0.23] in 48.74s
+Optimized substructure: 7/18, [30.73->27.41, 0.11] in 59.99s
+Optimized substructure: 8/18, [44.33->44.33, 0.00] in 76.67s
+Optimized substructure: 9/18, [48.66->48.66, 0.00] in 84.50s
+Optimized substructure: 10/18, [33.07->33.07, 0.00] in 93.07s
+Optimized substructure: 11/18, [48.47->48.47, 0.00] in 106.26s
+Optimized substructure: 12/18, [58.55->58.55, 0.00] in 118.24s
+Optimized substructure: 13/18, [46.08->46.08, 0.00] in 125.51s
+Optimized substructure: 14/18, [10.09->10.09, 0.00] in 129.87s
+Optimized substructure: 15/18, [36.91->36.91, 0.00] in 133.97s
+Optimized substructure: 16/18, [8.49->8.49, 0.00] in 141.96s
+Optimized substructure: 17/18, [56.96->56.96, 0.00] in 149.41s
+Optimized substructure: 18/18, [61.31->61.31, 0.00] in 155.02s
+/root/miniconda3/envs/ideal/lib/python3.10/site-packages/pymatgen/io/vasp/inputs.py:2420: EncodingWarning: We strongly encourage explicit `encoding`, and we would use UTF-8 by default as per PEP 686
+  with zopen(filename, mode="rt") as file:
+/root/miniconda3/envs/ideal/lib/python3.10/site-packages/pymatgen/io/vasp/inputs.py:2985: EncodingWarning: We strongly encourage explicit `encoding`, and we would use UTF-8 by default as per PEP 686
+  with zopen(os.path.join(output_dir, key), mode="wt") as file:
