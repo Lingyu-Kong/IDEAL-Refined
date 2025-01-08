@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import time
 
 import torch
 import wandb
@@ -95,8 +94,9 @@ def main(args_dict: dict):
                 "ISPIN": 2,  # 开启自旋极化
                 "LCHARGE": False,  # 不输出 CHGCAR
                 "ISYM": -1,  # 关闭对称性
-                "LREAL": "Auto",  # 自动选择是否使用实空间表示（兼顾效率和精度）
+                "LREAL": True,  # 自动选择是否使用实空间表示（兼顾效率和精度）
                 "NSW": 1,  # 不进行离子弛豫
+                "LORBIT": 0,  # 不输出轨道信息
                 "MAGMOM": {
                     "Fe": 4.0,
                     "K": 0.0,
@@ -180,11 +180,15 @@ def main(args_dict: dict):
                     "FeH_coor": FeH_coor,
                     "NN_coor": NN_coor,
                     "HH_coor": HH_coor,
-                    "MD Time": current_step * args_dict["timestep"] / 1000, # ps
+                    "MD Time": current_step * args_dict["timestep"] / 1000,  # ps
                 },
                 step=current_step,
             )
         write(traj_file, dyn.atoms, append=True)
+
+        if current_step % 2000 == 0:
+            data_buffer = calc.export_dataset()
+            write(f"ideal_data.xyz", data_buffer)
 
     dyn.attach(log_traj, interval=args_dict["loginterval"])
 

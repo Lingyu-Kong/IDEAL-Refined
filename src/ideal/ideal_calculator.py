@@ -375,3 +375,9 @@ class IDEALCalculator(Calculator):
                     else 0,
                 }
             )
+
+    def export_dataset(self):
+        """
+        This function is used to export the current dataset
+        """
+        return self.data_buffer

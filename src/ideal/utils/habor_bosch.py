@@ -241,7 +241,7 @@ def compute_FeNH_coordination(atoms):
     # shift_vectors.shape: (27, 1, 3)
     # positions + shift_vectors.shape: (27, n_atoms, 3)
     # dist_mat: (n_atoms, 27*n_atoms) 在 cdist 后再取 min 即可得到包含 PBC 的最小距离
-    dist_mat = torch.cdist(positions, positions + shift_vectors).min(dim=2).values
+    dist_mat = torch.cdist(positions, positions + shift_vectors).min(dim=0).values
     # dist_mat 结果为 (n_atoms, n_atoms): 每个原子对 (i, j) 的最小距离(考虑 PBC)
 
     # 建立原子 mask

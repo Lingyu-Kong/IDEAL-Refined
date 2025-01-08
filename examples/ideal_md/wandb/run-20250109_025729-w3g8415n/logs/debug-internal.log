@@ -1,7 +1,0 @@
-{"time":"2025-01-09T02:57:29.393130664+08:00","level":"INFO","msg":"stream: starting","core version":"0.19.2","symlink path":"/root/autodl-tmp/IDEAL-Refined/examples/ideal_md/wandb/run-20250109_025729-w3g8415n/logs/debug-core.log"}
-{"time":"2025-01-09T02:57:29.496652131+08:00","level":"INFO","msg":"created new stream","id":"w3g8415n"}
-{"time":"2025-01-09T02:57:29.49668066+08:00","level":"INFO","msg":"stream: started","id":"w3g8415n"}
-{"time":"2025-01-09T02:57:29.496718523+08:00","level":"INFO","msg":"sender: started","stream_id":"w3g8415n"}
-{"time":"2025-01-09T02:57:29.496714111+08:00","level":"INFO","msg":"writer: Do: started","stream_id":"w3g8415n"}
-{"time":"2025-01-09T02:57:29.496761215+08:00","level":"INFO","msg":"handler: started","stream_id":"w3g8415n"}
-{"time":"2025-01-09T02:57:30.181564781+08:00","level":"INFO","msg":"Starting system monitor"}
