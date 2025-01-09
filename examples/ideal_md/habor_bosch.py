@@ -212,9 +212,7 @@ def main(args_dict: dict):
             )
         write(traj_file, dyn.atoms, append=True)
 
-        if current_step % 2000 == 0:
-            data_buffer = calc.export_dataset()
-            write(f"./ideal_results/ideal_subs.xyz", data_buffer)
+        calc.export_dataset(filename="./ideal_results/ideal_subs.xyz")
 
     dyn.attach(log_traj, interval=args_dict["loginterval"])
 

@@ -15,6 +15,7 @@ from ase import Atoms
 from ase.calculators.calculator import Calculator
 from ase.stress import full_3x3_to_voigt_6_stress
 from ase.units import GPa
+from ase.io import write
 from typing_extensions import TypedDict, override
 
 from ideal.abinitio_interfaces import AbinitioInterfaceConfigBase
@@ -91,6 +92,7 @@ class IDEALCalculator(Calculator):
         self.device = torch.device(device)
         self.initialized = False
         self.data_buffer: list[Atoms] = []
+        self.data_buffer_exported = False
         self.error_buffer = np.zeros(0)
         self.wandb_log = wandb_log
 
@@ -332,6 +334,7 @@ class IDEALCalculator(Calculator):
                     )
                 )
                 self.data_buffer.extend(labeled_subs)
+                self.data_buffer_exported = False
                 self.error_buffer = np.append(
                     self.error_buffer,
                     np.random.uniform(low=0.1, high=1.0, size=len(labeled_subs)),
@@ -378,8 +381,10 @@ class IDEALCalculator(Calculator):
                 }
             )
 
-    def export_dataset(self):
+    def export_dataset(self, filename: str):
         """
         This function is used to export the current dataset
         """
-        return self.data_buffer
+        if not self.data_buffer_exported:
+            write(filename, self.data_buffer)
+            self.data_buffer_exported = True
