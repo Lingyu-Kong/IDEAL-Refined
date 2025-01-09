@@ -52,7 +52,7 @@ class SubSampler:
             specie: unc_threshold_config.create_calculator() for specie in species
         }
 
-    def update_unc_model(
+    def update_unc_model_and_threshold(
         self,
         atoms: Atoms,
         include_indices: list[int],
@@ -104,20 +104,27 @@ class SubSampler:
         unc_thresholds = self.get_unc_threshold()
         print(f"Uncertainty thresholds: {unc_thresholds}")
         sampled_local_env_indices = []
+        sampled_uncs = []
         for i, unc in enumerate(uncs):
             symbol_i = chemical_symbols[include_indices[i]]
             if unc > unc_thresholds[symbol_i]:
                 sampled_local_env_indices.append(include_indices[i])
+                sampled_uncs.append(unc)
         if max_samples is not None:
             sampled_local_env_indices = np.random.choice(
-                sampled_local_env_indices, size=max_samples, replace=False
+                sampled_local_env_indices,
+                size=min(max_samples, len(sampled_local_env_indices)),
+                replace=False,
             ).tolist()
 
-        print(f"Sampled {len(sampled_local_env_indices)} local environments")
+        print(
+            f"Sampled {len(sampled_local_env_indices)} local environments, indices: {sampled_local_env_indices}, unc: {[f'{unc:.2f}' for unc in sampled_uncs]}"
+        )
+
         if len(sampled_local_env_indices) == 0:
             return []
         else:
-            self.update_unc_model(
+            self.update_unc_model_and_threshold(
                 atoms=atoms,
                 include_indices=sampled_local_env_indices,
             )
@@ -164,13 +171,15 @@ class SubSampler:
         sampled_local_env_indices = include_indices
         if max_samples is not None:
             sampled_local_env_indices = np.random.choice(
-                include_indices, size=max_samples, replace=False
+                sampled_local_env_indices,
+                size=min(max_samples, len(sampled_local_env_indices)),
+                replace=False,
             ).tolist()
         print(f"Sampled {len(sampled_local_env_indices)} local environments")
         if len(sampled_local_env_indices) == 0:
             return []
         else:
-            self.update_unc_model(
+            self.update_unc_model_and_threshold(
                 atoms=atoms,
                 include_indices=sampled_local_env_indices,
             )

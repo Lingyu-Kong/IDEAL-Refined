@@ -229,12 +229,12 @@ class IDEALCalculator(Calculator):
         data_indices = list(range(len(atoms_list)))
         shuffle_indices = np.random.permutation(data_indices)
         loss_, e_mae, f_mae, s_mae = self._model_tune(
-            [self.data_buffer[i] for i in shuffle_indices], max_epochs=200
+            [self.data_buffer[i] for i in shuffle_indices], max_epochs=20
         )
         self._error_buffer_update(shuffle_indices, e_mae, f_mae, s_mae)
         for atoms in self.data_buffer:
-            self.sub_sampler.update_unc_model(
-                atoms=atoms, include_indices=list(range(len(atoms)))
+            self.sub_sampler.update_unc_model_and_threshold(
+                atoms=atoms, include_indices=[0]
             )
         self.initialized = True
 
@@ -319,39 +319,40 @@ class IDEALCalculator(Calculator):
                 max_samples=self.max_samples,
             )
             sub_sample_time = time.time() - time1
-            if len(subs) > 0:
-                time1 = time.time()
-                labeled_subs = []
-                for sub_label_idx, sub in enumerate(subs):
-                    labeled_sub = self.abinitio_interface.run(sub)
-                    if labeled_sub is not None:
-                        labeled_subs.append(labeled_sub)
-                    print(f"Sub {sub_label_idx + 1}/{len(subs)} labeled")
-                sub_label_time = time.time() - time1
-                time1 = time.time()
-                replay_indices = self._importance_sampling(
-                    size=max(
-                        len(labeled_subs),
-                        self.model_tuning_config["batch_size"] - len(labeled_subs),
-                    )
-                ).tolist()
-                data_indices = replay_indices + list(
-                    range(
-                        len(self.data_buffer), len(self.data_buffer) + len(labeled_subs)
-                    )
-                )
-                self.data_buffer.extend(labeled_subs)
-                self.data_buffer_exported = False
-                self.error_buffer = np.append(
-                    self.error_buffer,
-                    np.random.uniform(low=0.1, high=1.0, size=len(labeled_subs)),
-                )
-                shuffle_indices = np.random.permutation(data_indices).tolist()
-                loss_, e_mae, f_mae, s_mae = self._model_tune(
-                    [self.data_buffer[i] for i in shuffle_indices]
-                )
-                self._error_buffer_update(shuffle_indices, e_mae, f_mae, s_mae)
-                model_tune_time = time.time() - time1
+            ## Label the subs and update the model
+            # if len(subs) > 0:
+            #     time1 = time.time()
+            #     labeled_subs = []
+            #     for sub_label_idx, sub in enumerate(subs):
+            #         labeled_sub = self.abinitio_interface.run(sub)
+            #         if labeled_sub is not None:
+            #             labeled_subs.append(labeled_sub)
+            #         print(f"Sub {sub_label_idx + 1}/{len(subs)} labeled")
+            #     sub_label_time = time.time() - time1
+            #     time1 = time.time()
+            #     replay_indices = self._importance_sampling(
+            #         size=max(
+            #             len(labeled_subs),
+            #             self.model_tuning_config["batch_size"] - len(labeled_subs),
+            #         )
+            #     ).tolist()
+            #     data_indices = replay_indices + list(
+            #         range(
+            #             len(self.data_buffer), len(self.data_buffer) + len(labeled_subs)
+            #         )
+            #     )
+            #     self.data_buffer.extend(labeled_subs)
+            #     self.data_buffer_exported = False
+            #     self.error_buffer = np.append(
+            #         self.error_buffer,
+            #         np.random.uniform(low=0.1, high=1.0, size=len(labeled_subs)),
+            #     )
+            #     shuffle_indices = np.random.permutation(data_indices).tolist()
+            #     loss_, e_mae, f_mae, s_mae = self._model_tune(
+            #         [self.data_buffer[i] for i in shuffle_indices]
+            #     )
+            #     self._error_buffer_update(shuffle_indices, e_mae, f_mae, s_mae)
+            #     model_tune_time = time.time() - time1
         elif self.mode.lower() == "offline":
             pass
         else:

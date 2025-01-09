@@ -24,7 +24,10 @@ from ideal.subsampler.cut_strategy import (
 )
 from ideal.subsampler.sampler import SubSamplerConfig
 from ideal.subsampler.sub_optimizer import UncGradientOptimizerConfig
-from ideal.subsampler.threshold import PercentileUncThresholdConfig
+from ideal.subsampler.threshold import (
+    PercentileUncThresholdConfig,
+    ValueUncThresholdConfig,
+)
 from ideal.subsampler.unc_module import KernelCoreIncremental
 from ideal.subsampler.unc_module.unc_gk import SoapCompressConfig, SoapGKConfig
 from ideal.utils.habor_bosch import compute_FeNH_coordination, get_surface_indices
@@ -83,15 +86,23 @@ def main(args_dict: dict):
                 num_process=args_dict["num_process"],
                 max_num_rs=args_dict["max_num_rs"],
             )
+        if args_dict["unc_threshold_method"] == "percentile":
+            unc_threshold_config = PercentileUncThresholdConfig(
+                window_size=args_dict["unc_threshold_window_size"],
+                alpha=args_dict["unc_threshold_alpha"],
+                k=args_dict["unc_threshold_k"],
+            )
+        elif args_dict["unc_threshold_method"] == "value":
+            unc_threshold_config = ValueUncThresholdConfig(
+                window_size=args_dict["unc_threshold_window_size"],
+                sigma=args_dict["unc_threshold_sigma"],
+            )
+        else:
+            raise ValueError("Invalid uncertainty threshold method")
         sub_sampler = SubSamplerConfig(
             species=list(species),
             unc_model=unc_model,
-            unc_threshold_config=PercentileUncThresholdConfig(
-                window_size=args_dict["unc_threshold_window_size"],
-                alpha=args_dict["unc_threshold_alpha"],
-                beta=args_dict["unc_threshold_beta"],
-                k=args_dict["unc_threshold_k"],
-            ),
+            unc_threshold_config=unc_threshold_config,
             sub_optimizer=sub_optimizer,
             cut_strategy=cut_strategy,
         )
@@ -141,6 +152,7 @@ def main(args_dict: dict):
         calculator = IDEALCalculator(
             potential=potential,
             sub_sampler=sub_sampler,
+            max_samples=args_dict["max_ideal_samples"],
             abinitio_interface=abinitio_interface,
             include_indices=surface_indices,
             compute_stress=False,
@@ -197,6 +209,7 @@ def main(args_dict: dict):
 
     def log_traj():
         current_step = dyn.get_number_of_steps()
+        print("======================================================================")
         print(f"Step {current_step} / {args_dict['md_steps']}")
         NH_coor, FeN_coor, FeH_coor, NN_coor, HH_coor = compute_FeNH_coordination(atoms)
         if args_dict["wandb"]:
@@ -248,8 +261,9 @@ if __name__ == "__main__":
     parser.add_argument("--sub_opt_noise", type=float, default=0.0)
     parser.add_argument("--sub_opt_noise_decay", type=float, default=1.0)
     parser.add_argument("--sub_opt_grad_clip", type=float, default=1.0)
+    parser.add_argument("--max_ideal_samples", type=int, default=20)
     # Cut strategy configuration
-    parser.add_argument("--sub_cutoff", type=float, default=4.5)
+    parser.add_argument("--sub_cutoff", type=float, default=4.0)
     parser.add_argument("--cell_extend_max", type=float, default=1.5)
     parser.add_argument("--cell_extend_zpos_min", type=float, default=0.0)
     parser.add_argument("--cell_extend_zpos_max", type=float, default=2.0)
@@ -257,10 +271,11 @@ if __name__ == "__main__":
     parser.add_argument("--num_process", type=int, default=16)
     parser.add_argument("--max_num_rs", type=int, default=1500)
     ## Uncertainty threshold configuration
-    parser.add_argument("--unc_threshold_window_size", type=int, default=20000)
+    parser.add_argument("--unc_threshold_method", type=str, default="value")
+    parser.add_argument("--unc_threshold_window_size", type=int, default=5000)
     parser.add_argument("--unc_threshold_alpha", type=float, default=0.5)
-    parser.add_argument("--unc_threshold_beta", type=float, default=0.9)
-    parser.add_argument("--unc_threshold_k", type=float, default=2.0)
+    parser.add_argument("--unc_threshold_k", type=float, default=3.0)
+    parser.add_argument("--unc_threshold_sigma", type=float, default=40.0)
     # VASP configuration
     parser.add_argument("--vasp_npar", type=int, default=16)
     # Model configuration
@@ -277,11 +292,11 @@ if __name__ == "__main__":
     parser.add_argument("--model_scheduler", type=str, default="steplr")
     parser.add_argument("--model_precision", type=str, default="fp32")
     # MD configuration
-    parser.add_argument("--timestep", type=float, default=0.5)
+    parser.add_argument("--timestep", type=float, default=1.0)
     parser.add_argument("--temperature", type=float, default=1800.0)
     parser.add_argument("--friction", type=float, default=0.02)
     parser.add_argument("--md_steps", type=int, default=40000)
-    parser.add_argument("--loginterval", type=int, default=2)
+    parser.add_argument("--loginterval", type=int, default=1)
     ## Initialize Dataset
     parser.add_argument(
         "--initialize_dataset",

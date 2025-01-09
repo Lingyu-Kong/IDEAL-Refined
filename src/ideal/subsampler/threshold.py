@@ -75,7 +75,10 @@ class ValueUncThresholdCalculator(UncThresholdCalculator):
 
     @override
     def get_threshold(self):
-        mean = np.mean(self.replay_buffer).item()
+        if len(self.replay_buffer) == 0:
+            mean = 0.0
+        else:
+            mean = np.mean(self.replay_buffer).item()
         threshold = mean + self.sigma
         return threshold
 
@@ -97,10 +100,6 @@ class PercentileUncThresholdConfig(UncThresholdConfig):
     """
     alpha * count_percentile + (1 - alpha) * mean + k * std
     """
-    beta: NonNegativeFloat = 0.9
-    """
-    moving average for mean and std
-    """
     k: NonNegativeFloat = 1.0
     """
     mean + k * std
@@ -114,21 +113,19 @@ class PercentileUncThresholdConfig(UncThresholdConfig):
     def __init__(self, **data):
         super().__init__(**data)
         assert 0 <= self.alpha <= 1
-        assert 0 <= self.beta < 1
 
     @override
     def create_calculator(self):
         return PercentileUncThresholdCalculator(
             window_size=self.window_size,
             alpha=self.alpha,
-            beta=self.beta,
             k=self.k,
             min_samples=self.min_samples,
         )
 
 
 class PercentileUncThresholdCalculator(UncThresholdCalculator):
-    def __init__(self, window_size, alpha, beta, k, min_samples):
+    def __init__(self, window_size, alpha, k, min_samples):
         """
         Initialize the threshold calculator.
 
@@ -140,7 +137,6 @@ class PercentileUncThresholdCalculator(UncThresholdCalculator):
         """
         self.window_size = window_size
         self.alpha = alpha
-        self.beta = beta
         self.k = k
         self.min_samples = min_samples
 
@@ -173,7 +169,7 @@ class PercentileUncThresholdCalculator(UncThresholdCalculator):
         """
         if len(self.replay_buffer) < self.min_samples:
             mean = 0.0
-            std = 1.0
+            std = 10.0
         else:
             mean = np.mean(self.replay_buffer).item()
             std = np.std(self.replay_buffer).item()
@@ -198,6 +194,4 @@ class PercentileUncThresholdCalculator(UncThresholdCalculator):
         Reset the replay buffer and statistics to default values.
         """
         self.replay_buffer.clear()
-        self.mean = 0
-        self.std = 1.0
         self.initialized = False
