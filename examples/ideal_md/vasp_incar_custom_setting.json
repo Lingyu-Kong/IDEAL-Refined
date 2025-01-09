@@ -1,0 +1,23 @@
+{
+    "IBRION": -1,
+    "ENCUT": 520,
+    "EDIFF": 1e-3,
+    "ISMEAR": 0,
+    "ALGO": "Normal",
+    "SIGMA": 0.05,
+    "Accuracy": "Normal",
+    "PREC": "Normal",
+    "ISPIN": 2,
+    "LCHARGE": false,
+    "ISYM": -1,
+    "LREAL": "Auto",
+    "NSW": 1,
+    "LORBIT": 0,
+    "MAGMOM": {
+        "Fe": 4.0,
+        "K": 0.0,
+        "N": 0.0,
+        "H": 0.0
+    },
+    "KPOINTS": "Gamma"
+}

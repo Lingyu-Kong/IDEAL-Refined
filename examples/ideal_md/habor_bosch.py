@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 
 import torch
@@ -96,6 +97,12 @@ def main(args_dict: dict):
         )
 
         # Construct the IDEAL calculator
+        custom_setting_json = args_dict["vasp_custom_setting_json"]
+        if custom_setting_json is not None:
+            with open(custom_setting_json, "r") as f:
+                custom_setting = json.load(f)
+        else:
+            custom_setting = None
         abinitio_interface = VaspInterfaceConfig(
             user_incar_settings={
                 "IBRION": -1,  # 不进行离子弛豫
@@ -119,7 +126,9 @@ def main(args_dict: dict):
                     "H": 0.0,
                 },
                 "KPOINTS": "Gamma",  # 仍使用 Gamma 定心网格
-            },
+            }
+            if custom_setting is None
+            else custom_setting,
             user_kpoints_settings={
                 "reciprocal_density": 1.0,
                 "kpoints_scheme": "Gamma",  # 仍使用 Gamma 定心网格
@@ -286,6 +295,8 @@ if __name__ == "__main__":
     parser.add_argument("--wandb", action="store_true")
     ## Whether use catalyst substructure cutting (extend the cell on z-axis)
     parser.add_argument("--catalyst", action="store_true")
+    ## Vasp custom settings in json format
+    parser.add_argument("--vasp_custom_setting_json", type=str, default=None)
     args = parser.parse_args()
     args_dict = vars(args)
 
