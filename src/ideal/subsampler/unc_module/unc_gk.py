@@ -6,17 +6,15 @@ unc = (x - mu)^T * (K+sigma*I)^-1 * (x - mu)
 
 from __future__ import annotations
 
-from typing import TypedDict
-
 import numpy as np
-import scipy.stats as stats
 import torch
 from ase import Atoms
 from ase.build import make_supercell
 from dscribe.descriptors import SOAP
-from typing_extensions import override
+from pydantic import PositiveFloat, PositiveInt
+from typing_extensions import TypedDict, cast, override
 
-from ._base import UncModuleBase
+from ._base import UncModuleBase, UncModuleConfigBase
 from .kernel_core import KernelCoreBase, KernelCoreIncremental
 
 
@@ -27,6 +25,40 @@ class SoapCompressConfig(TypedDict):
 
     mode: str
     species_weighting: None | dict[str, float]
+
+
+class SoapGKConfig(UncModuleConfigBase):
+    """
+    Configuration for SoapGK
+    """
+
+    soap_cutoff: PositiveFloat
+    max_l: PositiveInt = 4
+    max_n: PositiveInt = 4
+    species: list[str]
+    soap_compress: dict | SoapCompressConfig | None = None
+    kernel_cls: type[KernelCoreBase] = KernelCoreIncremental
+    soap_normalization: str | None = "l2"
+    supercell_size: PositiveInt = 3
+    n_jobs: PositiveInt = 1
+
+    @override
+    def create_unc_module(self) -> SoapGK:
+        if isinstance(self.soap_compress, dict):
+            compress_method = cast(SoapCompressConfig, self.soap_compress)
+        else:
+            compress_method = self.soap_compress
+        return SoapGK(
+            soap_cutoff=self.soap_cutoff,
+            max_l=self.max_l,
+            max_n=self.max_n,
+            species=self.species,
+            compress_method=compress_method,
+            kernel_cls=self.kernel_cls,
+            soap_normalization=self.soap_normalization,
+            supercell_size=self.supercell_size,
+            n_jobs=self.n_jobs,
+        )
 
 
 class SoapGK(UncModuleBase):
@@ -71,9 +103,9 @@ class SoapGK(UncModuleBase):
         print(f"Soap feature_dim: {self.feature_dim}")
         self.core_dict = {s: kernel_cls(self.feature_dim) for s in species}
         self.soap_normalization = soap_normalization
-        assert (
-            supercell_size % 2 == 1 and supercell_size > 1
-        ), "supercell_size must be odd and greater than 1"
+        assert supercell_size % 2 == 1 and supercell_size > 1, (
+            "supercell_size must be odd and greater than 1"
+        )
         self.supercell_size = supercell_size
         self.n_jobs = n_jobs
 

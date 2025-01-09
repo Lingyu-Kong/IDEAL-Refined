@@ -10,18 +10,22 @@ from ase.io import read, write
 from ase.md.langevin import Langevin
 from typing_extensions import cast
 
-from ideal.abinitio_interfaces.vasp import VaspInterface
+from ideal.abinitio_interfaces.vasp import VaspFakeInterfaceConfig, VaspInterfaceConfig
 from ideal.ideal_calculator import (
     IDEALCalculator,
     IDEALModelTuningConfig,
     ImportanceSamplingConfig,
 )
 from ideal.models.potential import Potential
-from ideal.subsampler.cut_strategy import CSCECutStrategyCatalyst
-from ideal.subsampler.sampler import SubSampler, UncThresholdConfig
-from ideal.subsampler.sub_optimizer import UncGradientOptimizer
+from ideal.subsampler.cut_strategy import (
+    CSCECutStrategyCataystConfig,
+    CSCECutStrategyConfig,
+)
+from ideal.subsampler.sampler import SubSamplerConfig
+from ideal.subsampler.sub_optimizer import UncGradientOptimizerConfig
+from ideal.subsampler.threshold import PercentileUncThresholdConfig
 from ideal.subsampler.unc_module import KernelCoreIncremental
-from ideal.subsampler.unc_module.unc_gk import SoapCompressConfig, SoapGK
+from ideal.subsampler.unc_module.unc_gk import SoapCompressConfig, SoapGKConfig
 from ideal.utils.habor_bosch import compute_FeNH_coordination, get_surface_indices
 
 
@@ -35,12 +39,12 @@ def main(args_dict: dict):
         )
 
         # Define the subsampling strategy
-        unc_model = SoapGK(
+        unc_model = SoapGKConfig(
             soap_cutoff=args_dict["soap_cutoff"],
             max_l=args_dict["max_l"],
             max_n=args_dict["max_n"],
             species=list(species),
-            compress_method=SoapCompressConfig(
+            soap_compress=SoapCompressConfig(
                 mode=args_dict["soap_compress"], species_weighting=None
             ),
             kernel_cls=KernelCoreIncremental,
@@ -48,7 +52,7 @@ def main(args_dict: dict):
             supercell_size=args_dict["soap_supercell_size"],
             n_jobs=args_dict["n_jobs"],
         )
-        sub_optimizer = UncGradientOptimizer(
+        sub_optimizer = UncGradientOptimizerConfig(
             max_steps=args_dict["sub_opt_max_steps"],
             lr=args_dict["sub_opt_lr"],
             optimizer=args_dict["sub_opt_optimizer"],
@@ -58,20 +62,30 @@ def main(args_dict: dict):
             noise=args_dict["sub_opt_noise"],
             noise_decay=args_dict["sub_opt_noise_decay"],
         )
-        cut_strategy = CSCECutStrategyCatalyst(
-            method="ideal",
-            sub_cutoff=args_dict["sub_cutoff"],
-            cell_extend_max=args_dict["cell_extend_max"],
-            cell_extend_zpos_min=args_dict["cell_extend_zpos_min"],
-            cell_extend_zpos_max=args_dict["cell_extend_zpos_max"],
-            cut_scan_granularity=args_dict["cut_scan_granularity"],
-            num_process=args_dict["num_process"],
-            max_num_rs=args_dict["max_num_rs"],
-        )
-        sub_sampler = SubSampler(
+        if args_dict["catalyst"]:
+            cut_strategy = CSCECutStrategyCataystConfig(
+                sub_cutoff=args_dict["sub_cutoff"],
+                cell_extend_max=args_dict["cell_extend_max"],
+                cell_extend_zpos_min=args_dict["cell_extend_zpos_min"],
+                cell_extend_zpos_max=args_dict["cell_extend_zpos_max"],
+                cut_scan_granularity=args_dict["cut_scan_granularity"],
+                num_process=args_dict["num_process"],
+                max_num_rs=args_dict["max_num_rs"],
+            )
+        else:
+            cut_strategy = CSCECutStrategyConfig(
+                sub_cutoff=args_dict["sub_cutoff"],
+                cell_extend_max=args_dict["cell_extend_max"],
+                cell_extend_zpos_min=args_dict["cell_extend_zpos_min"],
+                cell_extend_zpos_max=args_dict["cell_extend_zpos_max"],
+                cut_scan_granularity=args_dict["cut_scan_granularity"],
+                num_process=args_dict["num_process"],
+                max_num_rs=args_dict["max_num_rs"],
+            )
+        sub_sampler = SubSamplerConfig(
             species=list(species),
             unc_model=unc_model,
-            unc_threshold_config=UncThresholdConfig(
+            unc_threshold_config=PercentileUncThresholdConfig(
                 window_size=args_dict["unc_threshold_window_size"],
                 alpha=args_dict["unc_threshold_alpha"],
                 beta=args_dict["unc_threshold_beta"],
@@ -82,7 +96,7 @@ def main(args_dict: dict):
         )
 
         # Construct the IDEAL calculator
-        abinitio_interface = VaspInterface(
+        abinitio_interface = VaspInterfaceConfig(
             user_incar_settings={
                 "IBRION": -1,  # 不进行离子弛豫
                 "ENCUT": 520,  # 能量截止
@@ -192,9 +206,7 @@ def main(args_dict: dict):
 
         if current_step % 2000 == 0:
             data_buffer = calc.export_dataset()
-            write(
-                f"./ideal_results/ideal_subs.xyz", data_buffer
-            )
+            write(f"./ideal_results/ideal_subs.xyz", data_buffer)
 
     dyn.attach(log_traj, interval=args_dict["loginterval"])
 
@@ -272,6 +284,8 @@ if __name__ == "__main__":
     )
     ## Wandb
     parser.add_argument("--wandb", action="store_true")
+    ## Whether use catalyst substructure cutting (extend the cell on z-axis)
+    parser.add_argument("--catalyst", action="store_true")
     args = parser.parse_args()
     args_dict = vars(args)
 

@@ -45,6 +45,7 @@ class Potential(nn.Module):
     def __init__(
         self,
         model,
+        name: str = "scratch",
         optimizer=None,
         scheduler="StepLR",
         ema=None,
@@ -61,6 +62,7 @@ class Potential(nn.Module):
         """
         super().__init__()
         self.model = model
+        self.name = name
         if optimizer is None:
             self.optimizer = Adam(
                 self.model.parameters(), lr=kwargs.get("lr", 1e-3), eps=1e-7
@@ -849,6 +851,7 @@ class Potential(nn.Module):
             or load_path.lower() == "mattersim-v1.0.0-1m.pth"
             or load_path.lower() == "mattersim-v1.0.0-1m"
         ):
+            ckpt_name = "mattersim-v1.0.0-1m"
             load_path = os.path.join(checkpoint_folder, "mattersim-v1.0.0-1M.pth")
             if not os.path.exists(load_path):
                 logger.info(
@@ -863,6 +866,7 @@ class Potential(nn.Module):
             load_path.lower() == "mattersim-v1.0.0-5m.pth"
             or load_path.lower() == "mattersim-v1.0.0-5m"
         ):
+            ckpt_name = "mattersim-v1.0.0-5m"
             load_path = os.path.join(checkpoint_folder, "mattersim-v1.0.0-5M.pth")
             if not os.path.exists(load_path):
                 logger.info(
@@ -874,13 +878,16 @@ class Potential(nn.Module):
                 )
             logger.info(f"Loading the pre-trained {os.path.basename(load_path)} model")
         else:
+            ckpt_name = os.path.basename(load_path).split("/")[-1].split(".")[0]
             logger.info("Loading the model from %s" % load_path)
         assert os.path.exists(load_path), f"Model file {load_path} not found"
 
         checkpoint = torch.load(load_path, map_location=device)
 
         assert checkpoint["model_name"] == model_name
-        model = M3Gnet(device=device, **checkpoint["model_args"]).to(device)
+        model = M3Gnet(name=ckpt_name, device=device, **checkpoint["model_args"]).to(
+            device
+        )
         model.load_state_dict(checkpoint["model"], strict=False)
 
         if load_training_state:

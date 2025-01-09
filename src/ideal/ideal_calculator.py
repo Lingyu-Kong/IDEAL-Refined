@@ -17,10 +17,10 @@ from ase.stress import full_3x3_to_voigt_6_stress
 from ase.units import GPa
 from typing_extensions import TypedDict, override
 
-from ideal.abinitio_interfaces import AbinitioInterfaceBase
+from ideal.abinitio_interfaces import AbinitioInterfaceConfigBase
 from ideal.models.m3gnet.utils.build import build_dataloader
 from ideal.models.potential import Potential, batch_to_dict
-from ideal.subsampler.sampler import SubSampler
+from ideal.subsampler.sampler import SubSamplerConfig
 
 
 class ImportanceSamplingConfig(TypedDict):
@@ -62,10 +62,10 @@ class IDEALCalculator(Calculator):
         potential: Potential,
         model_tuning_config: IDEALModelTuningConfig,
         importance_sampling: ImportanceSamplingConfig,
-        sub_sampler: SubSampler,
+        sub_sampler: SubSamplerConfig,
         include_indices: list[int] | None = None,
         max_samples: int | None = None,
-        abinitio_interface: AbinitioInterfaceBase,
+        abinitio_interface: AbinitioInterfaceConfigBase,
         compute_stress: bool = True,
         stress_weight: float = 1.0,
         device: str = "cuda:0" if torch.cuda.is_available() else "cpu",
@@ -82,10 +82,10 @@ class IDEALCalculator(Calculator):
         self.model_tuning_config = model_tuning_config
         self.importance_sampling = importance_sampling
         self.temperture = importance_sampling["temperature"]
-        self.sub_sampler = sub_sampler
+        self.sub_sampler = sub_sampler.create_sampler()
         self.include_indices = include_indices
         self.max_samples = max_samples
-        self.abinitio_interface = abinitio_interface
+        self.abinitio_interface = abinitio_interface.create_interface()
         self.compute_stress = compute_stress
         self.stress_weight = stress_weight * GPa
         self.device = torch.device(device)

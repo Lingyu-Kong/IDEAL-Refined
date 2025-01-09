@@ -12,9 +12,16 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from ase import Atoms
+from pydantic import BaseModel, NonNegativeFloat, PositiveFloat, PositiveInt
 from typing_extensions import override
 
 from .unc_module import UncModuleBase
+
+
+class SubOptimizerConfigBase(BaseModel, ABC):
+    @abstractmethod
+    def create_sub_optimizer(self) -> SubOptimizerBase:
+        pass
 
 
 class SubOptimizerBase(ABC):
@@ -34,6 +41,32 @@ class SubOptimizerBase(ABC):
         pass
 
 
+class UncGradientOptimizerConfig(SubOptimizerConfigBase):
+    max_steps: PositiveInt = 200
+    lr: NonNegativeFloat = 0.1
+    optimizer: str = "adam"
+    scheduler: str = "cosine"
+    early_stop: bool = True
+    early_stop_patience: PositiveInt = 100
+    noise: NonNegativeFloat = 0.0
+    noise_decay: NonNegativeFloat = 1.0
+    grad_clip: PositiveFloat | None = 1.0
+
+    @override
+    def create_sub_optimizer(self) -> UncGradientOptimizer:
+        return UncGradientOptimizer(
+            max_steps=self.max_steps,
+            lr=self.lr,
+            optimizer=self.optimizer,
+            scheduler=self.scheduler,
+            early_stop=self.early_stop,
+            early_stop_patience=self.early_stop_patience,
+            noise=self.noise,
+            noise_decay=self.noise_decay,
+            grad_clip=self.grad_clip,
+        )
+
+
 class UncGradientOptimizer(SubOptimizerBase):
     """
     Optimize the substructure using the uncertainty gradient descent
@@ -49,7 +82,7 @@ class UncGradientOptimizer(SubOptimizerBase):
         early_stop_patience: int = 100,
         noise: float = 0.0,
         noise_decay: float = 1.0,
-        grad_clip: float | None = 1.0,
+        grad_clip: float | None = 2.0,
     ):
         self.unc_model = None
         self.max_steps = max_steps

@@ -14,7 +14,23 @@ from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.io.vasp.sets import MPRelaxSet
 from typing_extensions import override
 
-from ._base import AbinitioInterfaceBase
+from ._base import AbinitioInterfaceBase, AbinitioInterfaceConfigBase
+
+
+class VaspInterfaceConfig(AbinitioInterfaceConfigBase):
+    user_incar_settings: dict
+    user_kpoints_settings: dict
+    vasp_cmd: str
+    vasp_run_dir: str = "./vasp_run"
+
+    @override
+    def create_interface(self) -> VaspInterface:
+        return VaspInterface(
+            user_incar_settings=self.user_incar_settings,
+            user_kpoints_settings=self.user_kpoints_settings,
+            vasp_cmd=self.vasp_cmd,
+            vasp_run_dir=self.vasp_run_dir,
+        )
 
 
 class VaspInterface(AbinitioInterfaceBase):
@@ -68,6 +84,22 @@ class VaspInterface(AbinitioInterfaceBase):
 
 
 from ase.calculators.singlepoint import SinglePointCalculator
+
+
+class VaspFakeInterfaceConfig(AbinitioInterfaceConfigBase):
+    user_incar_settings: dict
+    user_kpoints_settings: dict
+    vasp_cmd: str
+    vasp_run_dir: str = "./vasp_run"
+
+    @override
+    def create_interface(self) -> VaspFakeInterface:
+        return VaspFakeInterface(
+            user_incar_settings=self.user_incar_settings,
+            user_kpoints_settings=self.user_kpoints_settings,
+            vasp_cmd=self.vasp_cmd,
+            vasp_run_dir=self.vasp_run_dir,
+        )
 
 
 class VaspFakeInterface(AbinitioInterfaceBase):

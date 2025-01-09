@@ -3,7 +3,13 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 import numpy as np
+from pydantic import BaseModel
 
+
+class UncModuleConfigBase(BaseModel, ABC):
+    @abstractmethod
+    def create_unc_module(self) -> UncModuleBase:
+        pass
 
 class UncModuleBase(ABC):
     @abstractmethod

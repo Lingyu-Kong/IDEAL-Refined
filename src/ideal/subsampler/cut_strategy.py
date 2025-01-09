@@ -13,6 +13,7 @@ import ase.io
 import ase.neighborlist
 import numpy as np
 from ase import Atoms
+from pydantic import BaseModel, NonNegativeFloat, PositiveFloat, PositiveInt
 from typing_extensions import override
 
 from ideal.utils.habor_bosch import _rotate_to_z
@@ -213,6 +214,79 @@ def _try_all_cell_extends(
         sub_i_list.append(sub_i)
         unc_list.append(unc)
     return sub_i_list, unc_list
+
+
+class CSCECutStrategyConfig(BaseModel):
+    sub_cutoff: PositiveFloat
+    cell_extend_min: NonNegativeFloat = 0.0
+    cell_extend_max: NonNegativeFloat | None = None
+    cell_extend_xneg_min: NonNegativeFloat | None = None
+    cell_extend_xneg_max: NonNegativeFloat | None = None
+    cell_extend_xpos_min: NonNegativeFloat | None = None
+    cell_extend_xpos_max: NonNegativeFloat | None = None
+    cell_extend_yneg_min: NonNegativeFloat | None = None
+    cell_extend_yneg_max: NonNegativeFloat | None = None
+    cell_extend_ypos_min: NonNegativeFloat | None = None
+    cell_extend_ypos_max: NonNegativeFloat | None = None
+    cell_extend_zneg_min: NonNegativeFloat | None = None
+    cell_extend_zneg_max: NonNegativeFloat | None = None
+    cell_extend_zpos_min: NonNegativeFloat | None = None
+    cell_extend_zpos_max: NonNegativeFloat | None = None
+    cut_scan_granularity: NonNegativeFloat = 0.1
+    num_process: PositiveInt = 1
+    max_num_rs: PositiveInt = 1000
+
+    def create_cut_strategy(self) -> CSCECutStrategy:
+        return CSCECutStrategy(
+            method="ideal",
+            sub_cutoff=self.sub_cutoff,
+            cell_extend_min=self.cell_extend_min,
+            cell_extend_max=self.cell_extend_max,
+            cell_extend_xneg_min=self.cell_extend_xneg_min,
+            cell_extend_xneg_max=self.cell_extend_xneg_max,
+            cell_extend_xpos_min=self.cell_extend_xpos_min,
+            cell_extend_xpos_max=self.cell_extend_xpos_max,
+            cell_extend_yneg_min=self.cell_extend_yneg_min,
+            cell_extend_yneg_max=self.cell_extend_yneg_max,
+            cell_extend_ypos_min=self.cell_extend_ypos_min,
+            cell_extend_ypos_max=self.cell_extend_ypos_max,
+            cell_extend_zneg_min=self.cell_extend_zneg_min,
+            cell_extend_zneg_max=self.cell_extend_zneg_max,
+            cell_extend_zpos_min=self.cell_extend_zpos_min,
+            cell_extend_zpos_max=self.cell_extend_zpos_max,
+            cut_scan_granularity=self.cut_scan_granularity,
+            num_process=self.num_process,
+            max_num_rs=self.max_num_rs,
+        )
+
+
+class CSCECutStrategyCataystConfig(CSCECutStrategyConfig):
+    slab_interval: PositiveFloat = 15.0
+
+    @override
+    def create_cut_strategy(self) -> CSCECutStrategy:
+        return CSCECutStrategyCatalyst(
+            method="ideal",
+            sub_cutoff=self.sub_cutoff,
+            cell_extend_min=self.cell_extend_min,
+            cell_extend_max=self.cell_extend_max,
+            cell_extend_xneg_min=self.cell_extend_xneg_min,
+            cell_extend_xneg_max=self.cell_extend_xneg_max,
+            cell_extend_xpos_min=self.cell_extend_xpos_min,
+            cell_extend_xpos_max=self.cell_extend_xpos_max,
+            cell_extend_yneg_min=self.cell_extend_yneg_min,
+            cell_extend_yneg_max=self.cell_extend_yneg_max,
+            cell_extend_ypos_min=self.cell_extend_ypos_min,
+            cell_extend_ypos_max=self.cell_extend_ypos_max,
+            cell_extend_zneg_min=self.cell_extend_zneg_min,
+            cell_extend_zneg_max=self.cell_extend_zneg_max,
+            cell_extend_zpos_min=self.cell_extend_zpos_min,
+            cell_extend_zpos_max=self.cell_extend_zpos_max,
+            cut_scan_granularity=self.cut_scan_granularity,
+            num_process=self.num_process,
+            max_num_rs=self.max_num_rs,
+            slab_interval=self.slab_interval,
+        )
 
 
 class CSCECutStrategy:
