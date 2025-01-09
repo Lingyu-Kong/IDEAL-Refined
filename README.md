@@ -3,7 +3,7 @@
 ## Environment Setup
 
 ```bash
-mamba env create -f environment.yaml
-mamba activate mattersim
-uv pip install -e .
+mamba env create -f environment.yaml -y
+conda activate mattersim
+pip install -e .
 ```
