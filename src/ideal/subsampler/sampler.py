@@ -65,13 +65,11 @@ class SubSampler:
             reduction=False,
         )
         chemical_symbols = atoms.get_chemical_symbols()
-        for specie in self.species:
-            specie_indices = [
-                include_indices.index(i)
-                for i, symbol in enumerate(chemical_symbols)
-                if symbol == specie and i in include_indices
-            ]
-            self.threshold_calculators[specie].update(uncs[specie_indices])  # type: ignore
+
+        for idx in range(len(include_indices)):
+            self.threshold_calculators[chemical_symbols[include_indices[idx]]].update(
+                uncs[idx]  # type: ignore
+            )
 
     def get_unc_threshold(self):
         unc_thresholds = {

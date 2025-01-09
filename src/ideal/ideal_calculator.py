@@ -13,9 +13,9 @@ import torch
 import wandb
 from ase import Atoms
 from ase.calculators.calculator import Calculator
+from ase.io import write
 from ase.stress import full_3x3_to_voigt_6_stress
 from ase.units import GPa
-from ase.io import write
 from typing_extensions import TypedDict, override
 
 from ideal.abinitio_interfaces import AbinitioInterfaceConfigBase
@@ -220,6 +220,11 @@ class IDEALCalculator(Calculator):
         IDEAL should be initialized with a list of atoms as the initial dataset.
         """
         self.data_buffer = [copy.deepcopy(atoms) for atoms in atoms_list]
+        print(
+            "Initializing IDEAL algorithm with {} structures".format(
+                len(self.data_buffer)
+            )
+        )
         self.error_buffer = np.random.uniform(low=0.1, high=1.0, size=len(atoms_list))
         data_indices = list(range(len(atoms_list)))
         shuffle_indices = np.random.permutation(data_indices)
@@ -227,8 +232,10 @@ class IDEALCalculator(Calculator):
             [self.data_buffer[i] for i in shuffle_indices], max_epochs=200
         )
         self._error_buffer_update(shuffle_indices, e_mae, f_mae, s_mae)
-        for atoms in atoms_list:
-            self.sub_sampler.update_unc_model(atoms=atoms, include_indices=[0])
+        for atoms in self.data_buffer:
+            self.sub_sampler.update_unc_model(
+                atoms=atoms, include_indices=list(range(len(atoms)))
+            )
         self.initialized = True
 
     def _single_point_calculation(self, atoms: Atoms):

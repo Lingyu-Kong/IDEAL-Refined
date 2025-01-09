@@ -257,7 +257,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_process", type=int, default=16)
     parser.add_argument("--max_num_rs", type=int, default=1500)
     ## Uncertainty threshold configuration
-    parser.add_argument("--unc_threshold_window_size", type=int, default=10000)
+    parser.add_argument("--unc_threshold_window_size", type=int, default=20000)
     parser.add_argument("--unc_threshold_alpha", type=float, default=0.5)
     parser.add_argument("--unc_threshold_beta", type=float, default=0.9)
     parser.add_argument("--unc_threshold_k", type=float, default=2.0)
