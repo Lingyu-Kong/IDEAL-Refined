@@ -202,14 +202,13 @@ def main(args_dict: dict):
         if args_dict["wandb"]:
             wandb.log(
                 {
-                    "NH_coor": NH_coor,
-                    "FeN_coor": FeN_coor,
-                    "FeH_coor": FeH_coor,
-                    "NN_coor": NN_coor,
-                    "HH_coor": HH_coor,
-                    "MD Time": current_step * args_dict["timestep"] / 1000,  # ps
+                    "Coor/NH_coor": NH_coor,
+                    "Coor/FeN_coor": FeN_coor,
+                    "CoorFeH_coor": FeH_coor,
+                    "Coor/NN_coor": NN_coor,
+                    "Coor/HH_coor": HH_coor,
+                    "MD Time": current_step * args_dict["timestep"],  # fs
                 },
-                step=current_step,
             )
         write(traj_file, dyn.atoms, append=True)
 
