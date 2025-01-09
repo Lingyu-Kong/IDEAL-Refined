@@ -1,5 +1,6 @@
 __pycache__/
 build/
 *.egg-info/
-wandb/
-vasp_run/
+*wandb/
+*vasp_run/
+*ideal_results/

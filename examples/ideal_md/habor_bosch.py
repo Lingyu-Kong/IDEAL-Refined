@@ -85,16 +85,17 @@ def main(args_dict: dict):
         abinitio_interface = VaspInterface(
             user_incar_settings={
                 "IBRION": -1,  # 不进行离子弛豫
-                "ENCUT": 400,  # 能量截止
+                "ENCUT": 520,  # 能量截止
                 "EDIFF": 1e-3,  # 电子收敛标准
-                "ISMEAR": 2,  # 施密尔方法
-                "SIGMA": 0.05,  # Fermi 展宽
+                "ISMEAR": 0,  # MP展开
+                "ALGO": "Normal",  # 电子算法
+                "SIGMA": 0.05,  # 展宽
                 "Accuracy": "Normal",
                 "PREC": "Normal",  # 计算精度
                 "ISPIN": 2,  # 开启自旋极化
                 "LCHARGE": False,  # 不输出 CHGCAR
                 "ISYM": -1,  # 关闭对称性
-                "LREAL": True,  # 自动选择是否使用实空间表示（兼顾效率和精度）
+                "LREAL": "Auto",  # 自动选择是否使用实空间表示（兼顾效率和精度）
                 "NSW": 1,  # 不进行离子弛豫
                 "LORBIT": 0,  # 不输出轨道信息
                 "MAGMOM": {
@@ -103,12 +104,13 @@ def main(args_dict: dict):
                     "N": 0.0,
                     "H": 0.0,
                 },
+                "KPOINTS": "Gamma",  # 仍使用 Gamma 定心网格
             },
             user_kpoints_settings={
                 "reciprocal_density": 1.0,
                 "kpoints_scheme": "Gamma",  # 仍使用 Gamma 定心网格
             },
-            vasp_cmd=f"mpirun -np {args_dict['vasp_npar']} vasp_gam",
+            vasp_cmd=f"mpirun -np {args_dict['vasp_npar']} vasp_gam | tee vasp.log",
         )
         potential = Potential.from_checkpoint(
             load_path=args_dict["potential"],
@@ -164,7 +166,9 @@ def main(args_dict: dict):
         friction=args_dict["friction"],
         fixcm=True,
     )
-    traj_file = args_dict["file"].replace(".xyz", "_md.xyz")
+    traj_file = args_dict["file"].split("/")[-1].replace(".xyz", "_md.xyz")
+    os.makedirs("./ideal_results", exist_ok=True)
+    traj_file = f"./ideal_results/{traj_file}"
     if os.path.exists(traj_file):
         os.remove(traj_file)
 
@@ -188,7 +192,9 @@ def main(args_dict: dict):
 
         if current_step % 2000 == 0:
             data_buffer = calc.export_dataset()
-            write(f"ideal_data.xyz", data_buffer)
+            write(
+                f"./ideal_results/ideal_subs.xyz", data_buffer
+            )
 
     dyn.attach(log_traj, interval=args_dict["loginterval"])
 
@@ -231,7 +237,7 @@ if __name__ == "__main__":
     parser.add_argument("--cell_extend_zpos_max", type=float, default=2.0)
     parser.add_argument("--cut_scan_granularity", type=float, default=0.5)
     parser.add_argument("--num_process", type=int, default=16)
-    parser.add_argument("--max_num_rs", type=int, default=200)
+    parser.add_argument("--max_num_rs", type=int, default=1500)
     ## Uncertainty threshold configuration
     parser.add_argument("--unc_threshold_window_size", type=int, default=10000)
     parser.add_argument("--unc_threshold_alpha", type=float, default=0.5)
@@ -257,7 +263,7 @@ if __name__ == "__main__":
     parser.add_argument("--temperature", type=float, default=1800.0)
     parser.add_argument("--friction", type=float, default=0.02)
     parser.add_argument("--md_steps", type=int, default=40000)
-    parser.add_argument("--loginterval", type=int, default=20)
+    parser.add_argument("--loginterval", type=int, default=2)
     ## Initialize Dataset
     parser.add_argument(
         "--initialize_dataset",

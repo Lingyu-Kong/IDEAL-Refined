@@ -13,7 +13,7 @@ import torch
 import wandb
 from ase import Atoms
 from ase.calculators.calculator import Calculator
-from ase.constraints import full_3x3_to_voigt_6_stress
+from ase.stress import full_3x3_to_voigt_6_stress
 from ase.units import GPa
 from typing_extensions import TypedDict, override
 
@@ -128,7 +128,7 @@ class IDEALCalculator(Calculator):
 
         self.potential.scheduler = scheduler
 
-    def _model_tune(self, atoms_list: list[Atoms], max_epochs: int|None=None):
+    def _model_tune(self, atoms_list: list[Atoms], max_epochs: int | None = None):
         """
         This function is used to tune the model
         """
@@ -170,7 +170,7 @@ class IDEALCalculator(Calculator):
                 log=False,
                 reduction="none",
             )
-            self.potential.scheduler.step() # type: ignore
+            self.potential.scheduler.step()  # type: ignore
             e_mae_mean = np.mean(e_mae).item()
             f_mae_mean = np.mean(f_mae).item()
             s_mae_mean = np.mean(s_mae).item()
@@ -313,11 +313,11 @@ class IDEALCalculator(Calculator):
             if len(subs) > 0:
                 time1 = time.time()
                 labeled_subs = []
-                for sub in subs:
+                for sub_label_idx, sub in enumerate(subs):
                     labeled_sub = self.abinitio_interface.run(sub)
                     if labeled_sub is not None:
                         labeled_subs.append(labeled_sub)
-
+                    print(f"Sub {sub_label_idx + 1}/{len(subs)} labeled")
                 sub_label_time = time.time() - time1
                 time1 = time.time()
                 replay_indices = self._importance_sampling(
@@ -364,13 +364,15 @@ class IDEALCalculator(Calculator):
                     "IDEAL-Calc-Time/sub_label_time": sub_label_time,
                     "IDEAL-Calc-Time/model_tune_time": model_tune_time,
                     "IDEAL-Calc-Time/single_point_time": single_point_time,
-                    "IDEAL-Calc-Time/sub_sample_time_per_sub": sub_sample_time / len(subs)
+                    "IDEAL-Calc-Time/sub_sample_time_per_sub": sub_sample_time
+                    / len(subs)
                     if len(subs) > 0
                     else 0,
                     "IDEAL-Calc-Time/sub_label_time_per_sub": sub_label_time / len(subs)
                     if len(subs) > 0
                     else 0,
-                    "IDEAL-Calc-Time/model_tune_time_per_sub": model_tune_time / len(subs)
+                    "IDEAL-Calc-Time/model_tune_time_per_sub": model_tune_time
+                    / len(subs)
                     if len(subs) > 0
                     else 0,
                 }
