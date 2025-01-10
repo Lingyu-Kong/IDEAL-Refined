@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 
+import numpy as np
 import torch
 import wandb
 from ase import Atoms
@@ -184,6 +185,7 @@ def main(args_dict: dict):
                 },
             ),
         )
+
         initialize_atoms_list = read(args_dict["initialize_dataset"], ":")
         calculator.initialize(initialize_atoms_list)  # type: ignore
 
@@ -208,6 +210,9 @@ def main(args_dict: dict):
         os.remove(traj_file)
 
     def log_traj():
+        scaled_pos = dyn.atoms.get_scaled_positions()
+        scaled_pos = np.mod(scaled_pos, 1)
+        dyn.atoms.set_scaled_positions(scaled_pos)
         current_step = dyn.get_number_of_steps()
         print("======================================================================")
         print(f"Step {current_step} / {args_dict['md_steps']}")
@@ -274,8 +279,8 @@ if __name__ == "__main__":
     parser.add_argument("--unc_threshold_method", type=str, default="value")
     parser.add_argument("--unc_threshold_window_size", type=int, default=5000)
     parser.add_argument("--unc_threshold_alpha", type=float, default=0.5)
-    parser.add_argument("--unc_threshold_k", type=float, default=3.0)
-    parser.add_argument("--unc_threshold_sigma", type=float, default=40.0)
+    parser.add_argument("--unc_threshold_k", type=float, default=2.0)
+    parser.add_argument("--unc_threshold_sigma", type=float, default=60.0)
     # VASP configuration
     parser.add_argument("--vasp_npar", type=int, default=16)
     # Model configuration
@@ -292,7 +297,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_scheduler", type=str, default="steplr")
     parser.add_argument("--model_precision", type=str, default="fp32")
     # MD configuration
-    parser.add_argument("--timestep", type=float, default=1.0)
+    parser.add_argument("--timestep", type=float, default=0.5)
     parser.add_argument("--temperature", type=float, default=1800.0)
     parser.add_argument("--friction", type=float, default=0.02)
     parser.add_argument("--md_steps", type=int, default=40000)
