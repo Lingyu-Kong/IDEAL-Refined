@@ -92,6 +92,9 @@ class IDEALCalculator(Calculator):
         self.device = torch.device(device)
         self.initialized = False
         self.data_buffer: list[Atoms] = []
+        self.data_buffer_energies: list[float] = []
+        self.data_buffer_forces: list[np.ndarray] = []
+        self.data_buffer_stresses: list[np.ndarray] = []
         self.data_buffer_exported = False
         self.error_buffer = np.zeros(0)
         self.wandb_log = wandb_log
@@ -130,7 +133,7 @@ class IDEALCalculator(Calculator):
 
         self.potential.scheduler = scheduler
 
-    def _model_tune(self, atoms_list: list[Atoms], max_epochs: int | None = None):
+    def _model_tune(self, indices: list[int], max_epochs: int | None = None):
         """
         This function is used to tune the model
         """
@@ -139,10 +142,10 @@ class IDEALCalculator(Calculator):
             torch.cuda.set_device(self.device)
             torch.cuda.empty_cache()
         dataloader = build_dataloader(
-            atoms_list,
-            energies=[atoms.get_potential_energy() for atoms in atoms_list],
-            forces=[np.array(atoms.get_forces()) for atoms in atoms_list],
-            stresses=[np.array(atoms.get_stress(voigt=False)) for atoms in atoms_list],
+            [self.data_buffer[i] for i in indices],
+            energies=[self.data_buffer_energies[i] for i in indices],
+            forces=[self.data_buffer_forces[i] for i in indices],
+            stresses=[self.data_buffer_stresses[i] for i in indices],
             model_type=self.potential.model_name,
             cutoff=self.potential.model.model_args["cutoff"],
             threebody_cutoff=self.potential.model.model_args["threebody_cutoff"],
@@ -150,10 +153,10 @@ class IDEALCalculator(Calculator):
             shuffle=False,
         )
         loss_, e_mae, f_mae, s_mae = (
-            [0] * len(atoms_list),
-            [0] * len(atoms_list),
-            [0] * len(atoms_list),
-            [0] * len(atoms_list),
+            [0] * len(indices),
+            [0] * len(indices),
+            [0] * len(indices),
+            [0] * len(indices),
         )
         if max_epochs is None:
             max_epochs = self.model_tuning_config["max_epochs"]
@@ -220,6 +223,13 @@ class IDEALCalculator(Calculator):
         IDEAL should be initialized with a list of atoms as the initial dataset.
         """
         self.data_buffer = [copy.deepcopy(atoms) for atoms in atoms_list]
+        self.data_buffer_energies = [
+            atoms.get_potential_energy() for atoms in atoms_list
+        ]
+        self.data_buffer_forces = [np.array(atoms.get_forces()) for atoms in atoms_list]
+        self.data_buffer_stresses = [
+            np.array(atoms.get_stress(voigt=False)) for atoms in atoms_list
+        ]
         print(
             "Initializing IDEAL algorithm with {} structures".format(
                 len(self.data_buffer)
@@ -227,10 +237,8 @@ class IDEALCalculator(Calculator):
         )
         self.error_buffer = np.random.uniform(low=0.1, high=1.0, size=len(atoms_list))
         data_indices = list(range(len(atoms_list)))
-        shuffle_indices = np.random.permutation(data_indices)
-        loss_, e_mae, f_mae, s_mae = self._model_tune(
-            [self.data_buffer[i] for i in shuffle_indices], max_epochs=20
-        )
+        shuffle_indices = np.random.permutation(data_indices).tolist()
+        loss_, e_mae, f_mae, s_mae = self._model_tune(shuffle_indices, max_epochs=200)
         self._error_buffer_update(shuffle_indices, e_mae, f_mae, s_mae)
         for atoms in self.data_buffer:
             self.sub_sampler.update_unc_model_and_threshold(
@@ -319,40 +327,49 @@ class IDEALCalculator(Calculator):
                 max_samples=self.max_samples,
             )
             sub_sample_time = time.time() - time1
-            ## Label the subs and update the model
-            # if len(subs) > 0:
-            #     time1 = time.time()
-            #     labeled_subs = []
-            #     for sub_label_idx, sub in enumerate(subs):
-            #         labeled_sub = self.abinitio_interface.run(sub)
-            #         if labeled_sub is not None:
-            #             labeled_subs.append(labeled_sub)
-            #         print(f"Sub {sub_label_idx + 1}/{len(subs)} labeled")
-            #     sub_label_time = time.time() - time1
-            #     time1 = time.time()
-            #     replay_indices = self._importance_sampling(
-            #         size=max(
-            #             len(labeled_subs),
-            #             self.model_tuning_config["batch_size"] - len(labeled_subs),
-            #         )
-            #     ).tolist()
-            #     data_indices = replay_indices + list(
-            #         range(
-            #             len(self.data_buffer), len(self.data_buffer) + len(labeled_subs)
-            #         )
-            #     )
-            #     self.data_buffer.extend(labeled_subs)
-            #     self.data_buffer_exported = False
-            #     self.error_buffer = np.append(
-            #         self.error_buffer,
-            #         np.random.uniform(low=0.1, high=1.0, size=len(labeled_subs)),
-            #     )
-            #     shuffle_indices = np.random.permutation(data_indices).tolist()
-            #     loss_, e_mae, f_mae, s_mae = self._model_tune(
-            #         [self.data_buffer[i] for i in shuffle_indices]
-            #     )
-            #     self._error_buffer_update(shuffle_indices, e_mae, f_mae, s_mae)
-            #     model_tune_time = time.time() - time1
+            # Label the subs and update the model
+            if len(subs) > 0:
+                time1 = time.time()
+                labeled_subs = []
+                for sub_label_idx, sub in enumerate(subs):
+                    labeled_sub = self.abinitio_interface.run(sub)
+                    if labeled_sub is not None:
+                        sub_energy = labeled_sub.get_potential_energy()
+                        sub_forces = labeled_sub.get_forces()
+                        labeled_subs.append(copy.deepcopy(labeled_sub))
+                    print(f"Sub {sub_label_idx + 1}/{len(subs)} labeled")
+                sub_label_time = time.time() - time1
+                time1 = time.time()
+                replay_indices = self._importance_sampling(
+                    size=max(
+                        len(labeled_subs),
+                        self.model_tuning_config["batch_size"] - len(labeled_subs),
+                    )
+                ).tolist()
+                data_indices = replay_indices + list(
+                    range(
+                        len(self.data_buffer), len(self.data_buffer) + len(labeled_subs)
+                    )
+                )
+                self.data_buffer.extend(labeled_subs)
+                self.data_buffer_energies.extend(
+                    [sub.get_potential_energy() for sub in labeled_subs]
+                )
+                self.data_buffer_forces.extend(
+                    [np.array(sub.get_forces()) for sub in labeled_subs]
+                )
+                self.data_buffer_stresses.extend(
+                    [np.array(sub.get_stress(voigt=False)) for sub in labeled_subs]
+                )
+                self.data_buffer_exported = False
+                self.error_buffer = np.append(
+                    self.error_buffer,
+                    np.random.uniform(low=0.1, high=1.0, size=len(labeled_subs)),
+                )
+                shuffle_indices = np.random.permutation(data_indices).tolist()
+                loss_, e_mae, f_mae, s_mae = self._model_tune(shuffle_indices)
+                self._error_buffer_update(shuffle_indices, e_mae, f_mae, s_mae)
+                model_tune_time = time.time() - time1
         elif self.mode.lower() == "offline":
             pass
         else:
