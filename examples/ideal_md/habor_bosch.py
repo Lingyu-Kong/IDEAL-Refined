@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 
+import ase.units as units
 import numpy as np
 import torch
 import wandb
@@ -199,7 +200,7 @@ def main(args_dict: dict):
     dyn = Langevin(
         atoms,
         temperature_K=args_dict["temperature"],
-        timestep=args_dict["timestep"],
+        timestep=args_dict["timestep"] * units.fs,
         friction=args_dict["friction"],
         fixcm=True,
     )
@@ -299,8 +300,8 @@ if __name__ == "__main__":
     # MD configuration
     parser.add_argument("--timestep", type=float, default=0.5)
     parser.add_argument("--temperature", type=float, default=1800.0)
-    parser.add_argument("--friction", type=float, default=0.02)
-    parser.add_argument("--md_steps", type=int, default=40000)
+    parser.add_argument("--friction", type=float, default=0.1)
+    parser.add_argument("--md_steps", type=int, default=20000)
     parser.add_argument("--loginterval", type=int, default=1)
     ## Initialize Dataset
     parser.add_argument(
