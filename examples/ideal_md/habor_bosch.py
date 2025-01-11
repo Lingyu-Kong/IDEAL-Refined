@@ -223,7 +223,7 @@ def main(args_dict: dict):
                 {
                     "Coor/NH_coor": NH_coor,
                     "Coor/FeN_coor": FeN_coor,
-                    "CoorFeH_coor": FeH_coor,
+                    "Coor/FeH_coor": FeH_coor,
                     "Coor/NN_coor": NN_coor,
                     "Coor/HH_coor": HH_coor,
                     "MD Time": current_step * args_dict["timestep"],  # fs
@@ -247,7 +247,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--file",
         type=str,
-        default="../../contents/habor-bosch/Fe939-K50-semi_embedded-326atmH2-326atmN2.xyz",
+        default="../../contents/habor-bosch/Fe949-K40-semi_embedded-326atmH2-292atmN2.xyz",
     )
     # Uncertainty model configuration
     parser.add_argument("--soap_cutoff", type=float, default=3.5)
@@ -269,7 +269,7 @@ if __name__ == "__main__":
     parser.add_argument("--sub_opt_grad_clip", type=float, default=1.0)
     parser.add_argument("--max_ideal_samples", type=int, default=20)
     # Cut strategy configuration
-    parser.add_argument("--sub_cutoff", type=float, default=4.0)
+    parser.add_argument("--sub_cutoff", type=float, default=4.5)
     parser.add_argument("--cell_extend_max", type=float, default=1.5)
     parser.add_argument("--cell_extend_zpos_min", type=float, default=0.0)
     parser.add_argument("--cell_extend_zpos_max", type=float, default=2.0)
@@ -277,7 +277,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_process", type=int, default=16)
     parser.add_argument("--max_num_rs", type=int, default=1500)
     ## Uncertainty threshold configuration
-    parser.add_argument("--unc_threshold_method", type=str, default="value")
+    parser.add_argument("--unc_threshold_method", type=str, default="percentile")
     parser.add_argument("--unc_threshold_window_size", type=int, default=5000)
     parser.add_argument("--unc_threshold_alpha", type=float, default=0.5)
     parser.add_argument("--unc_threshold_k", type=float, default=2.0)
@@ -301,7 +301,7 @@ if __name__ == "__main__":
     parser.add_argument("--timestep", type=float, default=0.5)
     parser.add_argument("--temperature", type=float, default=1800.0)
     parser.add_argument("--friction", type=float, default=0.1)
-    parser.add_argument("--md_steps", type=int, default=20000)
+    parser.add_argument("--md_steps", type=int, default=80000)
     parser.add_argument("--loginterval", type=int, default=1)
     ## Initialize Dataset
     parser.add_argument(

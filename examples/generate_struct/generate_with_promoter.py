@@ -492,7 +492,7 @@ if __name__ == "__main__":
     box_extension = 15.0
 
     promoter_element = "K"
-    promoters_ratio = 0.04
+    promoters_ratio = 0.02
     num_promoters = int(np_size * promoters_ratio)
     add_promoter_method = "semi_embedded"  # 'on_surface' or 'semi_embedded'
     delete_overlap = True
@@ -540,8 +540,8 @@ if __name__ == "__main__":
     num_N2 = convert_density_to_num_molecules(cluster, N2_density, nanoparticle_element)
     print(f"Adding {num_H2:.2e} H2 molecules.")
     print(f"Adding {num_N2:.2e} N2 molecules.")
-    cluster = add_molecules(cluster, "H2", num_H2, mol_min_distance)
     cluster = add_molecules(cluster, "N2", num_N2, mol_min_distance)
+    cluster = add_molecules(cluster, "H2", num_H2, mol_min_distance)
 
     atomic_symbols = cluster.get_chemical_symbols()
     final_np_size = len([s for s in atomic_symbols if s == nanoparticle_element])

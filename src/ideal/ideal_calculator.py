@@ -328,8 +328,6 @@ class IDEALCalculator(Calculator):
             )
             sub_sample_time = time.time() - time1
 
-            write("./ideal_subs/subs.xyz", subs, append=True)
-
             ## Label the subs and update the model
             if len(subs) > 0:
                 time1 = time.time()
