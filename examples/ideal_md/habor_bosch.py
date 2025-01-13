@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 
@@ -32,7 +33,7 @@ from ideal.subsampler.threshold import (
 )
 from ideal.subsampler.unc_module import KernelCoreIncremental
 from ideal.subsampler.unc_module.unc_gk import SoapCompressConfig, SoapGKConfig
-from ideal.utils.habor_bosch import compute_FeNH_coordination, get_surface_indices
+from ideal.utils.habor_bosch import compute_coordination, get_surface_indices
 
 
 def main(args_dict: dict):
@@ -193,6 +194,10 @@ def main(args_dict: dict):
         return calculator
 
     atoms: Atoms = read(args_dict["file"])  # type: ignore
+    base_element = args_dict["file"].split("/")[-1].split("-")[0]
+    base_element = "".join([i for i in base_element if not i.isdigit()])
+    promoter_element = args_dict["file"].split("/")[-1].split("-")[1]
+    promoter_element = "".join([i for i in promoter_element if not i.isdigit()])
     calc = get_calculator()
     atoms.set_calculator(calc)
 
@@ -209,36 +214,44 @@ def main(args_dict: dict):
     traj_file = f"./ideal_results/{traj_file}"
     if os.path.exists(traj_file):
         os.remove(traj_file)
+    traj_atoms_list = []
 
     def log_traj():
         scaled_pos = dyn.atoms.get_scaled_positions()
         scaled_pos = np.mod(scaled_pos, 1)
         dyn.atoms.set_scaled_positions(scaled_pos)
+        traj_atoms_list.append(copy.deepcopy(dyn.atoms))
         current_step = dyn.get_number_of_steps()
         print("======================================================================")
         print(f"Step {current_step} / {args_dict['md_steps']}")
-        NH_coor, FeN_coor, FeH_coor, NN_coor, HH_coor = compute_FeNH_coordination(atoms)
+        coors = compute_coordination(
+            atoms, base_element=base_element, promoter_element=promoter_element
+        )
+        coors_log = {"Coor/" + k: v for k, v in coors.items()}
         if args_dict["wandb"]:
             wandb.log(
                 {
-                    "Coor/NH_coor": NH_coor,
-                    "Coor/FeN_coor": FeN_coor,
-                    "Coor/FeH_coor": FeH_coor,
-                    "Coor/NN_coor": NN_coor,
-                    "Coor/HH_coor": HH_coor,
                     "MD Time": current_step * args_dict["timestep"],  # fs
+                    **coors_log,
                 },
+                commit=True,
             )
-        write(traj_file, dyn.atoms, append=True)
+        # write(traj_file, dyn.atoms, append=True)
+        if current_step * args_dict["timestep"] % 1000 == 0:
+            write(traj_file, traj_atoms_list)
 
         calc.export_dataset(filename="./ideal_results/ideal_subs.xyz")
+
+        if current_step * args_dict["timestep"] % 1000 == 0:
+            wandb.save(traj_file)
+            wandb.save("./ideal_results/ideal_subs.xyz")
 
     dyn.attach(log_traj, interval=args_dict["loginterval"])
 
     if args_dict["wandb"]:
         wandb.login(key="37f3de06380e350727df28b49712f8b7fe5b14aa")
         wandb.init(project="IDEAL-MD", config=args_dict, name="Habor-Bosch")
-
+    print(args_dict)
     dyn.run(args_dict["md_steps"])
 
 

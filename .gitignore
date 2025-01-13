@@ -3,4 +3,4 @@ build/
 *.egg-info/
 *wandb/
 *vasp_run/
-*ideal_results/
+*ideal_results*/

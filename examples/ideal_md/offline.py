@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 
@@ -32,7 +33,7 @@ from ideal.subsampler.threshold import (
 )
 from ideal.subsampler.unc_module import KernelCoreIncremental
 from ideal.subsampler.unc_module.unc_gk import SoapCompressConfig, SoapGKConfig
-from ideal.utils.habor_bosch import compute_FeNH_coordination, get_surface_indices
+from ideal.utils.habor_bosch import compute_coordination, get_surface_indices
 
 
 def main(args_dict: dict):
@@ -187,12 +188,17 @@ def main(args_dict: dict):
                 },
             ),
         )
-        # initialize_atoms_list = read(args_dict["initialize_dataset"], ":")
-        # calculator.initialize(initialize_atoms_list)  # type: ignore
+        if args_dict["retune"]:
+            initialize_atoms_list = read(args_dict["initialize_dataset"], ":")
+            calculator.initialize(initialize_atoms_list)  # type: ignore
 
         return calculator
 
     atoms: Atoms = read(args_dict["file"])  # type: ignore
+    base_element = args_dict["file"].split("/")[-1].split("-")[0]
+    base_element = "".join([i for i in base_element if not i.isdigit()])
+    promoter_element = args_dict["file"].split("/")[-1].split("-")[1]
+    promoter_element = "".join([i for i in promoter_element if not i.isdigit()])
     calc = get_calculator()
     atoms.set_calculator(calc)
 
@@ -209,36 +215,43 @@ def main(args_dict: dict):
     traj_file = f"./ideal_results/{traj_file}"
     if os.path.exists(traj_file):
         os.remove(traj_file)
+    traj_atoms_list = []
 
     def log_traj():
         scaled_pos = dyn.atoms.get_scaled_positions()
         scaled_pos = np.mod(scaled_pos, 1)
         dyn.atoms.set_scaled_positions(scaled_pos)
+        traj_atoms_list.append(copy.deepcopy(dyn.atoms))
         current_step = dyn.get_number_of_steps()
         print("======================================================================")
         print(f"Step {current_step} / {args_dict['md_steps']}")
-        NH_coor, FeN_coor, FeH_coor, NN_coor, HH_coor = compute_FeNH_coordination(atoms)
+        coors = compute_coordination(
+            atoms, base_element=base_element, promoter_element=promoter_element
+        )
+        coors_log = {"Coor/" + k: v for k, v in coors.items()}
         if args_dict["wandb"]:
             wandb.log(
                 {
-                    "Coor/NH_coor": NH_coor,
-                    "Coor/FeN_coor": FeN_coor,
-                    "CoorFeH_coor": FeH_coor,
-                    "Coor/NN_coor": NN_coor,
-                    "Coor/HH_coor": HH_coor,
                     "MD Time": current_step * args_dict["timestep"],  # fs
+                    **coors_log,
                 },
+                commit=True,
             )
-        write(traj_file, dyn.atoms, append=True)
+        # write(traj_file, dyn.atoms, append=True)
 
         calc.export_dataset(filename="./ideal_results/ideal_subs.xyz")
+
+        if current_step * args_dict["timestep"] % args_dict["save_interval"] == 0:
+            write(traj_file, traj_atoms_list)
+            wandb.save(traj_file)
+            wandb.save("./ideal_results/ideal_subs.xyz")
 
     dyn.attach(log_traj, interval=args_dict["loginterval"])
 
     if args_dict["wandb"]:
         wandb.login(key="37f3de06380e350727df28b49712f8b7fe5b14aa")
-        wandb.init(project="IDEAL-MD", config=args_dict, name="Habor-Bosch")
-
+        wandb.init(project="IDEAL-MD", config=args_dict, name="Habor-Bosch-Offline")
+    print(args_dict)
     dyn.run(args_dict["md_steps"])
 
 
@@ -247,7 +260,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--file",
         type=str,
-        default="../generate_struct/particles/Fe949-K40-semi_embedded-326atmH2-292atmN2.xyz",
+        default="../generate_struct/particles/Fe989-K0-semi_embedded_deep-298atmH2-326atmN2.xyz",
     )
     # Uncertainty model configuration
     parser.add_argument("--soap_cutoff", type=float, default=3.5)
@@ -292,7 +305,7 @@ if __name__ == "__main__":
     parser.add_argument("--IS_temperature_min", type=float, default=0.1)
     parser.add_argument("--IS_key", type=str, default="f_mae")
     parser.add_argument("--model_max_epochs", type=int, default=60)
-    parser.add_argument("--model_batch_size", type=int, default=32)
+    parser.add_argument("--model_batch_size", type=int, default=16)
     parser.add_argument("--model_lr", type=float, default=1e-4)
     parser.add_argument("--model_optimizer", type=str, default="adam")
     parser.add_argument("--model_scheduler", type=str, default="steplr")
@@ -301,13 +314,15 @@ if __name__ == "__main__":
     parser.add_argument("--timestep", type=float, default=0.5)
     parser.add_argument("--temperature", type=float, default=1800.0)
     parser.add_argument("--friction", type=float, default=0.1)
-    parser.add_argument("--md_steps", type=int, default=20000)
-    parser.add_argument("--loginterval", type=int, default=1)
+    parser.add_argument("--md_steps", type=int, default=1000000)
+    parser.add_argument("--loginterval", type=int, default=100)
+    parser.add_argument("--save_interval", type=int, default=5000)
     ## Initialize Dataset
+    parser.add_argument("--retune", action="store_true")
     parser.add_argument(
         "--initialize_dataset",
         type=str,
-        default="../../contents/habor-bosch/init_Jan_08.xyz",
+        default="../../contents/habor-bosch/ideal_subs_FeK_650K.xyz",
     )
     ## Wandb
     parser.add_argument("--wandb", action="store_true")

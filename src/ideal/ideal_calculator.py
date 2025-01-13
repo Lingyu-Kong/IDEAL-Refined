@@ -295,6 +295,8 @@ class IDEALCalculator(Calculator):
         Returns:
         """
 
+        atoms = copy.deepcopy(atoms)
+
         if self.mode.lower() == "ideal" and not self.initialized:
             raise ValueError(
                 "IDEAL algorithm should be initialized with a list of atoms as the initial dataset."
@@ -404,7 +406,8 @@ class IDEALCalculator(Calculator):
                     / len(subs)
                     if len(subs) > 0
                     else 0,
-                }
+                },
+                commit=False,
             )
 
     def export_dataset(self, filename: str):

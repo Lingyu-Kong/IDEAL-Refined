@@ -9,7 +9,8 @@ import ase.neighborlist as nl
 import numpy as np
 import torch
 from ase import Atoms
-from ase.data import chemical_symbols, covalent_radii
+from ase.data import chemical_symbols as CHEMICAL_SYMBOLS
+from ase.data import covalent_radii
 
 
 def _rotate_to_z(
@@ -90,11 +91,11 @@ def get_surface_indices(
 
     # Calculate diameters for all particle elements
     diameters = {
-        element: 2 * radii_data[chemical_symbols.index(element)]
+        element: 2 * radii_data[CHEMICAL_SYMBOLS.index(element)]
         for element in particle_elements
     }
     radii = {
-        element: radii_data[chemical_symbols.index(element)]
+        element: radii_data[CHEMICAL_SYMBOLS.index(element)]
         for element in particle_elements
     }
 
@@ -215,7 +216,7 @@ import math
 import torch
 
 
-def compute_FeNH_coordination(atoms):
+def compute_coordination(atoms, base_element: str, promoter_element: str):
     positions = torch.as_tensor(atoms.get_positions(), dtype=torch.float32)
     atomic_numbers = torch.as_tensor(atoms.get_atomic_numbers(), dtype=torch.int64)
     box = torch.as_tensor(atoms.get_cell().lengths(), dtype=torch.float32)
@@ -249,7 +250,8 @@ def compute_FeNH_coordination(atoms):
     # 建立原子 mask
     N_mask = atomic_numbers == 7
     H_mask = atomic_numbers == 1
-    Fe_mask = atomic_numbers == 26
+    base_mask = atomic_numbers == CHEMICAL_SYMBOLS.index(base_element)
+    promoter_mask = atomic_numbers == CHEMICAL_SYMBOLS.index(promoter_element)
 
     n_atoms = len(atomic_numbers)
 
@@ -257,33 +259,67 @@ def compute_FeNH_coordination(atoms):
     not_self = ~torch.eye(n_atoms, dtype=torch.bool)
 
     NH_mask = N_mask.unsqueeze(1) & H_mask.unsqueeze(0) & not_self
-    FeN_mask = Fe_mask.unsqueeze(1) & N_mask.unsqueeze(0) & not_self
-    FeH_mask = Fe_mask.unsqueeze(1) & H_mask.unsqueeze(0) & not_self
+    baseN_mask = base_mask.unsqueeze(1) & N_mask.unsqueeze(0) & not_self
+    baseH_mask = base_mask.unsqueeze(1) & H_mask.unsqueeze(0) & not_self
+    promoterN_mask = promoter_mask.unsqueeze(1) & N_mask.unsqueeze(0) & not_self
+    promoterH_mask = promoter_mask.unsqueeze(1) & H_mask.unsqueeze(0) & not_self
     NN_mask = N_mask.unsqueeze(1) & N_mask.unsqueeze(0) & not_self
     HH_mask = H_mask.unsqueeze(1) & H_mask.unsqueeze(0) & not_self
 
     # 定义合理的截断半径 (单位 Å)，以下仅为示例值
-    nh_cut = 1.2
-    fen_cut = 2.2
-    feh_cut = 1.8
-    nn_cut = 1.5
-    hh_cut = 0.9
+    bond_cutoffs = {
+        "NN": 1.5,
+        "HH": 0.9,
+        "NH": 1.3,
+        "FeN": 2.2,
+        "FeH": 1.8,
+        "RuN": 2.2,
+        "RuH": 1.8,
+        "KN": 3.2,
+        "KH": 2.8,
+        "CsN": 3.5,
+        "CsH": 3.2,
+    }
 
     # 统计各个成键数
     # dist_mat < cutoff 会返回一个 (n_atoms, n_atoms) 的布尔矩阵，再根据 mask 筛选
     # 然后 sum(dim=1) 后，对于属于该元素的原子再聚合求和
-    NH_coor_indices = torch.where((dist_mat < nh_cut) & NH_mask)
-    print("NH_coor_indices", NH_coor_indices)
+    NN_coor = torch.sum(
+        torch.sum((dist_mat < bond_cutoffs["NN"]) & NN_mask, dim=1)[N_mask].int()
+    ).item()
+    HH_coor = torch.sum(
+        torch.sum((dist_mat < bond_cutoffs["HH"]) & HH_mask, dim=1)[H_mask].int()
+    ).item()
     NH_coor = torch.sum(
-        torch.sum((dist_mat < nh_cut) & NH_mask, dim=1)[N_mask].int()
+        torch.sum((dist_mat < bond_cutoffs["NH"]) & NH_mask, dim=1)[N_mask].int()
     ).item()
-    FeN_coor = torch.sum(
-        torch.sum((dist_mat < fen_cut) & FeN_mask, dim=1)[Fe_mask].int()
+    baseN_coor = torch.sum(
+        torch.sum((dist_mat < bond_cutoffs[base_element + "N"]) & baseN_mask, dim=1)[
+            base_mask
+        ].int()
     ).item()
-    FeH_coor = torch.sum(
-        torch.sum((dist_mat < feh_cut) & FeH_mask, dim=1)[Fe_mask].int()
+    baseH_coor = torch.sum(
+        torch.sum((dist_mat < bond_cutoffs[base_element + "H"]) & baseH_mask, dim=1)[
+            base_mask
+        ].int()
     ).item()
-    NN_coor = torch.sum(torch.sum((dist_mat < nn_cut) & NN_mask, dim=1)[N_mask].int()).item()
-    HH_coor = torch.sum(torch.sum((dist_mat < hh_cut) & HH_mask, dim=1)[H_mask].int()).item()
+    promoterN_coor = torch.sum(
+        torch.sum(
+            (dist_mat < bond_cutoffs[promoter_element + "N"]) & promoterN_mask, dim=1
+        )[promoter_mask].int()
+    ).item()
+    promoterH_coor = torch.sum(
+        torch.sum(
+            (dist_mat < bond_cutoffs[promoter_element + "H"]) & promoterH_mask, dim=1
+        )[promoter_mask].int()
+    ).item()
 
-    return NH_coor, FeN_coor, FeH_coor, NN_coor, HH_coor
+    return {
+        "NN": NN_coor,
+        "HH": HH_coor,
+        "NH": NH_coor,
+        base_element + "N": baseN_coor,
+        base_element + "H": baseH_coor,
+        promoter_element + "N": promoterN_coor,
+        promoter_element + "H": promoterH_coor,
+    }

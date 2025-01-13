@@ -41,7 +41,7 @@ def pos_normalize(system: Atoms, nanoparticle_element: str) -> Atoms:
     return system
 
 
-def generate_bcc_wulff_nanoparticle(
+def generate_bcc_Fe_nanoparticle(
     element: str,
     size: int,
     lattice_constant: float | None = None,
@@ -102,7 +102,7 @@ def generate_bcc_wulff_nanoparticle(
     return nanoparticle
 
 
-def generate_nanoparticle(
+def generate_hcp_Ru_nanoparticle(
     np_size: int, nanoparticle_element: str, box_extension: float
 ) -> Atoms:
     """
@@ -110,38 +110,30 @@ def generate_nanoparticle(
     """
     try:
         # 这里用一个简单的经验式，把 np_size 换算成 icosahedron 的壳数
-        n_shells = int(np.ceil(np.float_power(np_size / 2869, 1 / 3) * 10))
+        n_shells = max(3, int(np.ceil(np.float_power(np_size / 3000, 1 / 3))))
         nanoparticle = Icosahedron(nanoparticle_element, noshells=n_shells)
     except NotImplementedError as error:
         # 有些元素 (hcp) 不支持 icosahedron，就用 wulff_construction 替代
+        print("Use hcp Wulff construction instead of Icosahedron.")
         if "hcp" in str(error):
             surfaces = [(0, 0, 0, 1), (1, 0, -1, 0), (1, 0, -1, 1)]
-            esurf = [2.598, 2.877, 2.906]
+            esurf = [2.0, 2.5, 2.8]
             nanoparticle = wulff_construction(
                 symbol=nanoparticle_element,
                 surfaces=surfaces,
                 energies=esurf,
                 size=np_size,
                 structure="hcp",
+                latticeconstant={"a": 2.705, "c/a": 1.7},
                 rounding="closest",
             )
         else:
             raise error
 
-    # Define the PBC box dimensions
-    if nanoparticle_element == "Fe":
-        bulk_bcc = bulk("Fe", "bcc", a=2.866)  # BCC bulk structure
-        nanoparticle = nanoparticle.center(
-            vacuum=box_extension
-        )  # Center the nanoparticle
-        # Replace with periodic box matching BCC lattice
-        nanoparticle.set_cell(bulk_bcc.get_cell())
-        nanoparticle.set_pbc(True)
-    else:
-        positions = nanoparticle.get_positions()
-        box_size = np.ptp(positions, axis=0) + box_extension
-        nanoparticle.set_cell(box_size)
-        nanoparticle.set_pbc(True)
+    positions = nanoparticle.get_positions()
+    box_size = np.ptp(positions, axis=0) + box_extension
+    nanoparticle.set_cell(box_size)
+    nanoparticle.set_pbc(True)
 
     return nanoparticle
 
@@ -328,17 +320,20 @@ def add_promoter(
     Returns:
         Updated ASE Atoms object with added or replaced promoter atoms.
     """
+    if num_promoters == 0:
+        return system
+
     method = method.lower()
-    if method not in ["on_surface", "semi_embedded"]:
-        raise ValueError("Method must be 'on_surface' or 'semi_embedded'.")
+    if method not in ["on_surface", "semi_embedded", "semi_embedded_deep"]:
+        raise ValueError(
+            "Method must be 'on_surface', 'semi_embedded', or 'semi_embedded_deep'."
+        )
 
     # 读取原子半径 (可选，如果需要用在后续逻辑里)
     element_radius = {
         s: covalent_radii[CHEMICAL_SYMBOLS.index(s) - 1]
         for s in [nanoparticle_element, promoter_element]
     }
-    r_host: float = element_radius[nanoparticle_element]
-    r_promoter: float = element_radius[promoter_element]
 
     # 计算系统中所有原子的空间中心 & 纳米颗粒的近似半径
     positions = np.array(system.get_positions())
@@ -376,9 +371,6 @@ def add_promoter(
                         continue
                 # 通过检查，接受这次放置
                 promoter_positions.append(new_promoter_pos)
-                print(
-                    f"Placed promoter at {new_promoter_pos}, {len(promoter_positions)}/{num_promoters}"
-                )
                 break
             else:
                 print("Warning: Could not place a promoter satisfying all constraints.")
@@ -393,7 +385,7 @@ def add_promoter(
             atomic_symbols, positions=final_positions, cell=cell, pbc=True
         )
 
-    else:
+    elif "semi_embedded" in method:
         # semi_embedded: 通过“替换”方式，将若干表面/近表面原子换成 promoter
         cutoffs = natural_cutoffs(system)
         nl = NeighborList(cutoffs, self_interaction=False, bothways=True)
@@ -404,8 +396,14 @@ def add_promoter(
             indices, _ = nl.get_neighbors(i)
             coord_number = len(indices)
             # 简单判定：配位数较低(比如 < 10)的原子视为表面/近表面原子
-            if coord_number <= 10:
-                surface_indices.append(i)
+            if method == "semi_embedded":
+                if coord_number > 8 and coord_number <= 10:
+                    surface_indices.append(i)
+            elif method == "semi_embedded_deep":
+                if coord_number > 10 and coord_number <= 13:
+                    surface_indices.append(i)
+            else:
+                raise ValueError("Invalid method.")
 
         if len(surface_indices) < num_promoters:
             print(
@@ -480,41 +478,62 @@ def add_promoter(
         system_with_promoters = Atoms(
             remaining_symbols, positions=remaining_positions, cell=cell, pbc=True
         )
+    else:
+        raise ValueError("Invalid method.")
 
     return system_with_promoters
 
 
 # ------------------------ 测试与使用示例 ------------------------
 if __name__ == "__main__":
-    # ==================== 参数设置 ====================
-    np_size = 1000
-    nanoparticle_element = "Fe"
-    box_extension = 15.0
+    import argparse
 
-    promoter_element = "K"
-    promoters_ratio = 0.02
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--np_size", type=int, default=1000)
+    parser.add_argument("--nanoparticle_element", type=str, default="Fe")
+    parser.add_argument("--box_extension", type=float, default=15.0)
+    parser.add_argument("--promoter_element", type=str, default="K")
+    parser.add_argument("--promoters_ratio", type=float, default=0.02)
+    parser.add_argument("--add_promoter_method", type=str, default="semi_embedded")
+    parser.add_argument("--delete_overlap", type=bool, default=True)
+    parser.add_argument("--promoter_promoter_min_dist", type=float, default=6.0)
+    parser.add_argument("--H2_density", type=float, default=0.00402 * 2)
+    parser.add_argument("--N2_density", type=float, default=0.00402 * 2)
+    parser.add_argument("--mol_min_distance", type=float, default=3.0)
+    args = parser.parse_args()
+    args_dict = vars(args)
+
+    # ==================== 参数设置 ====================
+    np_size = args_dict["np_size"]
+    nanoparticle_element = args_dict["nanoparticle_element"]
+    box_extension = args_dict["box_extension"]
+
+    promoter_element = args_dict["promoter_element"]
+    promoters_ratio = args_dict["promoters_ratio"]
     num_promoters = int(np_size * promoters_ratio)
-    add_promoter_method = "semi_embedded"  # 'on_surface' or 'semi_embedded'
-    delete_overlap = True
-    promoter_promoter_min_dist = 5.0  # 两个 Promoter 之间的最小距离
+    add_promoter_method = args_dict["add_promoter_method"]
+    delete_overlap = args_dict["delete_overlap"]
+    promoter_promoter_min_dist = args_dict["promoter_promoter_min_dist"]
 
     # H2_pressure = 100  ## 0.0402 N^2/Å^3
-    H2_density = 0.00402 * 2
+    H2_density = args_dict["H2_density"]
     # N2_pressure = 100  ## 0.0402 N^2/Å^3
-    N2_density = 0.00402 * 2
-    mol_min_distance = 3.0
+    N2_density = args_dict["N2_density"]
+    mol_min_distance = args_dict["mol_min_distance"]
     # ==================== 参数设置 ====================
 
     # 1. 生成纳米粒子
     if nanoparticle_element == "Fe":
-        cluster = generate_bcc_wulff_nanoparticle(
+        cluster = generate_bcc_Fe_nanoparticle(
             element="Fe",
             size=np_size,
             surface_energies={"100": 2.4, "110": 2.1, "111": 2.3},
             box_extension=box_extension,
         )
     else:
-        cluster = generate_nanoparticle(np_size, nanoparticle_element, box_extension)
+        cluster = generate_hcp_Ru_nanoparticle(
+            np_size, nanoparticle_element, box_extension
+        )
     cluster = pos_normalize(cluster, nanoparticle_element)
 
     # 2. 添加 promoter
@@ -528,6 +547,14 @@ if __name__ == "__main__":
         del_overlap=delete_overlap,
         promoter_promoter_min_dist=promoter_promoter_min_dist,
     )
+
+    # symbols = cluster.get_chemical_symbols()
+    # Fe_indices = [i for i, s in enumerate(symbols) if s == nanoparticle_element]
+    # for i in Fe_indices:
+    #     symbols[i] = "H"
+    # cluster.set_chemical_symbols(symbols)
+    # write("./test.xyz", cluster)
+    # exit()
 
     # 3. 添加气体分子
     # num_H2 = convert_pressure_to_num_molecules(
