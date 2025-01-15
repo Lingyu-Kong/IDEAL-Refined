@@ -61,12 +61,12 @@ class IDEALCalculator(Calculator):
         *,
         mode: str = "ideal",
         potential: Potential,
-        model_tuning_config: IDEALModelTuningConfig,
-        importance_sampling: ImportanceSamplingConfig,
-        sub_sampler: SubSamplerConfig,
+        model_tuning_config: IDEALModelTuningConfig | None = None,
+        importance_sampling: ImportanceSamplingConfig | None = None,
+        sub_sampler: SubSamplerConfig | None = None,
         include_indices: list[int] | None = None,
         max_samples: int | None = None,
-        abinitio_interface: AbinitioInterfaceConfigBase,
+        abinitio_interface: AbinitioInterfaceConfigBase | None = None,
         compute_stress: bool = True,
         stress_weight: float = 1.0,
         device: str = "cuda:0" if torch.cuda.is_available() else "cpu",
@@ -80,23 +80,28 @@ class IDEALCalculator(Calculator):
         ], "mode should be in ['ideal', 'offline']"
         self.mode = mode
         self.potential = potential.to(torch.device(device))
-        self.model_tuning_config = model_tuning_config
-        self.importance_sampling = importance_sampling
-        self.temperture = importance_sampling["temperature"]
-        self.sub_sampler = sub_sampler.create_sampler()
-        self.include_indices = include_indices
-        self.max_samples = max_samples
-        self.abinitio_interface = abinitio_interface.create_interface()
+        if mode == "ideal":
+            assert model_tuning_config is not None
+            self.model_tuning_config = model_tuning_config
+            assert importance_sampling is not None
+            self.importance_sampling = importance_sampling
+            self.temperture = importance_sampling["temperature"]
+            assert sub_sampler is not None
+            self.sub_sampler = sub_sampler.create_sampler()
+            self.include_indices = include_indices
+            self.max_samples = max_samples
+            assert abinitio_interface is not None
+            self.abinitio_interface = abinitio_interface.create_interface()
+            self.initialized = False
+            self.data_buffer: list[Atoms] = []
+            self.data_buffer_energies: list[float] = []
+            self.data_buffer_forces: list[np.ndarray] = []
+            self.data_buffer_stresses: list[np.ndarray] = []
+            self.data_buffer_exported = False
+            self.error_buffer = np.zeros(0)
         self.compute_stress = compute_stress
         self.stress_weight = stress_weight * GPa
         self.device = torch.device(device)
-        self.initialized = False
-        self.data_buffer: list[Atoms] = []
-        self.data_buffer_energies: list[float] = []
-        self.data_buffer_forces: list[np.ndarray] = []
-        self.data_buffer_stresses: list[np.ndarray] = []
-        self.data_buffer_exported = False
-        self.error_buffer = np.zeros(0)
         self.wandb_log = wandb_log
 
     def _configure_optimizers(self):
@@ -294,8 +299,6 @@ class IDEALCalculator(Calculator):
                 results will be loaded.
         Returns:
         """
-
-        atoms = copy.deepcopy(atoms)
 
         if self.mode.lower() == "ideal" and not self.initialized:
             raise ValueError(

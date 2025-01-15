@@ -67,6 +67,7 @@ def _rotate_to_z(
 def get_surface_indices(
     atoms: Atoms,
     particle_elements: list[str],
+    promoter_elements: list[str],
     radius_type: str = "covalent",
 ):
     """
@@ -82,6 +83,7 @@ def get_surface_indices(
     """
     symbols = atoms.get_chemical_symbols()
     particle_indices = [i for i, s in enumerate(symbols) if s in particle_elements]
+    promoter_indices = [i for i, s in enumerate(symbols) if s in promoter_elements]
 
     # Get radii
     if radius_type == "covalent":
@@ -100,7 +102,7 @@ def get_surface_indices(
     }
 
     # Collect surface atom indices
-    surface_indices = []
+    surface_indices = promoter_indices
 
     for i in particle_indices:
         # Rotate the atoms such that atom i aligns with the z-axis
@@ -123,6 +125,74 @@ def get_surface_indices(
             surface_indices.append(i)
 
     return surface_indices
+
+
+def get_sub_surface_indices(
+    atoms: Atoms,
+    particle_elements: list[str],
+    promoter_elements: list[str],
+    radius_type: str = "covalent",
+):
+    symbols = atoms.get_chemical_symbols()
+    particle_indices = [i for i, s in enumerate(symbols) if s in particle_elements]
+    promoter_indices = [i for i, s in enumerate(symbols) if s in promoter_elements]
+
+    # Get radii
+    if radius_type == "covalent":
+        radii_data = covalent_radii
+    else:
+        raise ValueError(f"Unsupported radius type: {radius_type}")
+
+    # Calculate diameters for all particle elements
+    diameters = {
+        element: 2 * radii_data[CHEMICAL_SYMBOLS.index(element)]
+        for element in particle_elements
+    }
+    radii = {
+        element: radii_data[CHEMICAL_SYMBOLS.index(element)]
+        for element in particle_elements
+    }
+
+    # Collect surface atom indices
+    sub_surface_indices = promoter_indices
+
+    for i in particle_indices:
+        # Rotate the atoms such that atom i aligns with the z-axis
+        positions = _rotate_to_z(atoms, i)
+
+        # Get the z position of the current atom
+        z_i = positions[i, 2]
+
+        # Check if there's any atom above this atom in +z direction by more than its diameter
+        diameter = diameters[symbols[i]]
+        radius = radii[symbols[i]]
+        higher_atoms = [
+            j
+            for j, pos in enumerate(positions)
+            if (j != i) and (pos[2] > z_i + radius) and symbols[j] in particle_elements
+        ]
+
+        # If only one atom is higher than this atom in the +z direction, it's a sub-surface atom
+        if len(higher_atoms) <= 4:
+            sub_surface_indices.append(i)
+
+    return sub_surface_indices
+
+
+def get_non_surface_indices(
+    atoms: Atoms,
+    particle_elements: list[str],
+    promoter_elements: list[str],
+    radius_type: str = "covalent",
+):
+    kernel_elements = list(set(particle_elements).union(set(promoter_elements)))
+    symbols = atoms.get_chemical_symbols()
+    kernel_indices = [i for i, s in enumerate(symbols) if s in kernel_elements]
+    surface_indices = get_surface_indices(
+        atoms, particle_elements, promoter_elements, radius_type
+    )
+    non_surface_indices = [i for i in kernel_indices if i not in surface_indices]
+    return non_surface_indices
 
 
 # def get_surface_indices(

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import os
 
@@ -10,6 +9,8 @@ import numpy as np
 import torch
 import wandb
 from ase import Atoms
+from ase.calculators.singlepoint import SinglePointCalculator
+from ase.constraints import FixAtoms
 from ase.io import read, write
 from ase.md.langevin import Langevin
 from typing_extensions import cast
@@ -33,7 +34,11 @@ from ideal.subsampler.threshold import (
 )
 from ideal.subsampler.unc_module import KernelCoreIncremental
 from ideal.subsampler.unc_module.unc_gk import SoapCompressConfig, SoapGKConfig
-from ideal.utils.habor_bosch import compute_coordination, get_surface_indices
+from ideal.utils.habor_bosch import (
+    compute_coordination,
+    get_non_surface_indices,
+    get_surface_indices,
+)
 
 
 def main(args_dict: dict):
@@ -41,8 +46,14 @@ def main(args_dict: dict):
         # Load the structure
         atoms: Atoms = read(args_dict["file"])  # type: ignore
         species = set(atoms.get_chemical_symbols())
+        base_element = args_dict["file"].split("/")[-1].split("-")[0]
+        base_element = "".join([i for i in base_element if not i.isdigit()])
+        promoter_element = args_dict["file"].split("/")[-1].split("-")[1]
+        promoter_element = "".join([i for i in promoter_element if not i.isdigit()])
         surface_indices = get_surface_indices(
-            atoms, particle_elements=list(species - set(["H", "N"]))
+            atoms,
+            particle_elements=[base_element],
+            promoter_elements=[promoter_element],
         )
 
         # Define the subsampling strategy
@@ -199,8 +210,27 @@ def main(args_dict: dict):
     base_element = "".join([i for i in base_element if not i.isdigit()])
     promoter_element = args_dict["file"].split("/")[-1].split("-")[1]
     promoter_element = "".join([i for i in promoter_element if not i.isdigit()])
+    surface_indices = get_surface_indices(
+        atoms,
+        particle_elements=[base_element],
+        promoter_elements=[promoter_element],
+    )
+    non_surface_indices = get_non_surface_indices(
+        atoms,
+        particle_elements=[base_element],
+        promoter_elements=[promoter_element],
+    )
     calc = get_calculator()
     atoms.set_calculator(calc)
+    if args_dict["fix_kernel"]:
+        fix_indices = non_surface_indices
+        fix_indices_mask = [
+            True if i in fix_indices else False for i in range(len(atoms))
+        ]
+        fix_atoms_constraint = FixAtoms(
+            indices=fix_indices_mask,
+        )
+        atoms.set_constraint(fix_atoms_constraint)
 
     # Run the MD simulation
     dyn = Langevin(
@@ -210,7 +240,7 @@ def main(args_dict: dict):
         friction=args_dict["friction"],
         fixcm=True,
     )
-    traj_file = args_dict["file"].split("/")[-1].replace(".xyz", "_md.xyz")
+    traj_file = args_dict["file"].split("/")[-1].replace(".xyz", "_md_offline.xyz")
     os.makedirs("./ideal_results", exist_ok=True)
     traj_file = f"./ideal_results/{traj_file}"
     if os.path.exists(traj_file):
@@ -221,7 +251,20 @@ def main(args_dict: dict):
         scaled_pos = dyn.atoms.get_scaled_positions()
         scaled_pos = np.mod(scaled_pos, 1)
         dyn.atoms.set_scaled_positions(scaled_pos)
-        traj_atoms_list.append(copy.deepcopy(dyn.atoms))
+        frame_atoms = Atoms(
+            symbols=dyn.atoms.get_chemical_symbols(),
+            scaled_positions=scaled_pos,
+            cell=dyn.atoms.get_cell(),
+            pbc=True,
+        )
+        energy = dyn.atoms.get_potential_energy()
+        forces = dyn.atoms.get_forces()
+        stresses = dyn.atoms.get_stress()
+        single_point_calculator = SinglePointCalculator(
+            atoms=frame_atoms, energy=energy, forces=forces, stress=stresses
+        )
+        frame_atoms.set_calculator(single_point_calculator)
+        traj_atoms_list.append(frame_atoms)
         current_step = dyn.get_number_of_steps()
         print("======================================================================")
         print(f"Step {current_step} / {args_dict['md_steps']}")
@@ -260,7 +303,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--file",
         type=str,
-        default="../generate_struct/particles/Fe989-K0-semi_embedded_deep-298atmH2-326atmN2.xyz",
+        default="../generate_struct/particles/Fe949-K40-semi_embedded-326atmH2-292atmN2.xyz",
     )
     # Uncertainty model configuration
     parser.add_argument("--soap_cutoff", type=float, default=3.5)
@@ -298,7 +341,7 @@ if __name__ == "__main__":
     # VASP configuration
     parser.add_argument("--vasp_npar", type=int, default=16)
     # Model configuration
-    parser.add_argument("--potential", type=str, default="MatterSim-v1.0.0-5M")
+    parser.add_argument("--potential", type=str, default="MatterSim-v1.0.0-1M")
     parser.add_argument("--cuda_device_idx", type=int, default=0)
     parser.add_argument("--IS_temperature", type=float, default=2.0)
     parser.add_argument("--IS_temperature_decay", type=float, default=0.05)
@@ -312,11 +355,12 @@ if __name__ == "__main__":
     parser.add_argument("--model_precision", type=str, default="fp32")
     # MD configuration
     parser.add_argument("--timestep", type=float, default=0.5)
-    parser.add_argument("--temperature", type=float, default=1800.0)
+    parser.add_argument("--temperature", type=float, default=650.0)
     parser.add_argument("--friction", type=float, default=0.1)
-    parser.add_argument("--md_steps", type=int, default=1000000)
+    parser.add_argument("--md_steps", type=int, default=2000000)
     parser.add_argument("--loginterval", type=int, default=100)
     parser.add_argument("--save_interval", type=int, default=5000)
+    parser.add_argument("--fix_kernel", action="store_true")
     ## Initialize Dataset
     parser.add_argument("--retune", action="store_true")
     parser.add_argument(
