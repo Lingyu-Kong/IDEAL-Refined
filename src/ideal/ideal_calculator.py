@@ -80,25 +80,24 @@ class IDEALCalculator(Calculator):
         ], "mode should be in ['ideal', 'offline']"
         self.mode = mode
         self.potential = potential.to(torch.device(device))
-        if mode == "ideal":
-            assert model_tuning_config is not None
+        if model_tuning_config is not None:
             self.model_tuning_config = model_tuning_config
-            assert importance_sampling is not None
+        if importance_sampling is not None:
             self.importance_sampling = importance_sampling
             self.temperture = importance_sampling["temperature"]
-            assert sub_sampler is not None
+        if sub_sampler is not None:
             self.sub_sampler = sub_sampler.create_sampler()
             self.include_indices = include_indices
             self.max_samples = max_samples
-            assert abinitio_interface is not None
+        if abinitio_interface is not None:
             self.abinitio_interface = abinitio_interface.create_interface()
-            self.initialized = False
-            self.data_buffer: list[Atoms] = []
-            self.data_buffer_energies: list[float] = []
-            self.data_buffer_forces: list[np.ndarray] = []
-            self.data_buffer_stresses: list[np.ndarray] = []
-            self.data_buffer_exported = False
-            self.error_buffer = np.zeros(0)
+        self.initialized = False
+        self.data_buffer: list[Atoms] = []
+        self.data_buffer_energies: list[float] = []
+        self.data_buffer_forces: list[np.ndarray] = []
+        self.data_buffer_stresses: list[np.ndarray] = []
+        self.data_buffer_exported = False
+        self.error_buffer = np.zeros(0)
         self.compute_stress = compute_stress
         self.stress_weight = stress_weight * GPa
         self.device = torch.device(device)
@@ -222,33 +221,40 @@ class IDEALCalculator(Calculator):
 
     def initialize(
         self,
-        atoms_list: list[Atoms],
+        model_initial_atoms_list: list[Atoms],
+        unc_initial_atoms_list: list[Atoms] | None = None,
     ):
         """
         IDEAL should be initialized with a list of atoms as the initial dataset.
         """
-        self.data_buffer = [copy.deepcopy(atoms) for atoms in atoms_list]
+        self.data_buffer = [copy.deepcopy(atoms) for atoms in model_initial_atoms_list]
         self.data_buffer_energies = [
-            atoms.get_potential_energy() for atoms in atoms_list
+            atoms.get_potential_energy() for atoms in model_initial_atoms_list
         ]
-        self.data_buffer_forces = [np.array(atoms.get_forces()) for atoms in atoms_list]
+        self.data_buffer_forces = [np.array(atoms.get_forces()) for atoms in model_initial_atoms_list]
         self.data_buffer_stresses = [
-            np.array(atoms.get_stress(voigt=False)) for atoms in atoms_list
+            np.array(atoms.get_stress(voigt=False)) for atoms in model_initial_atoms_list
         ]
         print(
             "Initializing IDEAL algorithm with {} structures".format(
                 len(self.data_buffer)
             )
         )
-        self.error_buffer = np.random.uniform(low=0.1, high=1.0, size=len(atoms_list))
-        data_indices = list(range(len(atoms_list)))
+        self.error_buffer = np.random.uniform(low=0.1, high=1.0, size=len(model_initial_atoms_list))
+        data_indices = list(range(len(model_initial_atoms_list)))
         shuffle_indices = np.random.permutation(data_indices).tolist()
         loss_, e_mae, f_mae, s_mae = self._model_tune(shuffle_indices, max_epochs=200)
         self._error_buffer_update(shuffle_indices, e_mae, f_mae, s_mae)
-        for atoms in self.data_buffer:
-            self.sub_sampler.update_unc_model_and_threshold(
-                atoms=atoms, include_indices=[0]
-            )
+        if unc_initial_atoms_list is not None:
+            for atoms in unc_initial_atoms_list:
+                self.sub_sampler.update_unc_model_and_threshold(
+                    atoms=atoms, include_indices=[0]
+                )
+        else:
+            for atoms in self.data_buffer:
+                self.sub_sampler.update_unc_model_and_threshold(
+                    atoms=atoms, include_indices=[0]
+                )
         self.initialized = True
 
     def _single_point_calculation(self, atoms: Atoms):

@@ -40,7 +40,7 @@ def _rotate_to_z(
     cos_theta = np.clip(np.dot(vec, z_axis) / vec_norm, -1.0, 1.0)
     if axis_norm < 1e-8:
         if np.isclose(cos_theta, -1.0):  # vec is anti-parallel to z_axis
-            rotation_matrix = np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]])
+            rotation_matrix = np.array([[1, 0, 0], [0, 1, 0], [0, 0, -1]])
             rotated_positions = positions @ rotation_matrix.T
             return rotated_positions + cell_center_pos.reshape(1, 3)
         else:
@@ -67,7 +67,7 @@ def _rotate_to_z(
 def get_surface_indices(
     atoms: Atoms,
     particle_elements: list[str],
-    promoter_elements: list[str],
+    promoter_elements: list[str] = [],
     radius_type: str = "covalent",
 ):
     """
@@ -349,6 +349,8 @@ def compute_coordination(atoms, base_element: str, promoter_element: str):
         "KH": 2.8,
         "CsN": 3.5,
         "CsH": 3.2,
+        "LiN": 2.5,
+        "LiH": 2.2,
     }
 
     # 统计各个成键数

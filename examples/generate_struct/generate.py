@@ -48,21 +48,6 @@ def generate_bcc_Fe_nanoparticle(
     surface_energies: dict | None = None,
     box_extension: float = 10.0,
 ) -> Atoms:
-    """
-    Generate a BCC nanoparticle using Wulff construction.
-
-    Parameters:
-    - element (str): Element symbol (e.g., 'Fe').
-    - size (int): Approximate number of atoms in the nanoparticle.
-    - lattice_constant (float): Lattice constant for the BCC structure. If None, use default.
-    - surface_energies (dict): Surface energies for specific Miller indices.
-                               Default: {'100': 2.5, '110': 2.0, '111': 2.2}.
-    - box_extension (float): Extra box space for the periodic boundary conditions.
-
-    Returns:
-    - nanoparticle (Atoms): The BCC nanoparticle in a PBC box.
-    """
-    # Default surface energies for BCC
     if surface_energies is None:
         surface_energies = {"100": 2.5, "110": 2.0, "111": 2.2}
 

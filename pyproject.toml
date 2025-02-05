@@ -31,6 +31,7 @@ dependencies = [
     "prettytable",
     "loguru",
     "pybtex",
+    "rich"
 ]
 
 [project.optional-dependencies]

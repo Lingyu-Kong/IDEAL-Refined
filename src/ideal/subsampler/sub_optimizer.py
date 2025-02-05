@@ -141,6 +141,8 @@ class UncGradientOptimizer(SubOptimizerBase):
             )
         if unc_include_indices is None:
             unc_include_indices = list(range(len(atoms)))
+        if unc_include_indices == []:
+            return atoms
         positions = torch.from_numpy(np.array(atoms.positions)).to(torch.float32)
         best_positions = positions.clone().detach().numpy()
         optimizer, scheduler = self._configure_optimizer(positions)

@@ -208,7 +208,7 @@ def _try_all_cell_extends(
             selected_cell_extend_zpos=all_cell_extends[j, 5],
         )
         unc, _ = unc_model.unc_predict(
-            atoms=sub_i,
+            atoms=copy.deepcopy(sub_i),
             include_grad=False,
         )
         sub_i_list.append(sub_i)
@@ -423,14 +423,47 @@ class CSCECutStrategy:
         positions = positions - positions[center_index].reshape(1, 3)
         return positions
 
+    def _try_all_cell_extends(
+        self,
+        sub: Atoms,
+        centered_parent_pos: np.ndarray,
+        parent_symbols: list[str],
+        center_index: int,
+        all_cell_extends: np.ndarray,
+    ):
+        assert np.all(centered_parent_pos[center_index] == 0)
+        sub_i_list = []
+        unc_list = []
+        for j in range(all_cell_extends.shape[0]):
+            sub_i = _single_shrink_cell_and_cell_extend(
+                sub=sub,
+                sub_cutoff=self.sub_cutoff,
+                center_index=center_index,
+                centered_parent_pos=centered_parent_pos,
+                parent_symbols=parent_symbols,
+                selected_cell_extend_xneg=all_cell_extends[j, 0],
+                selected_cell_extend_xpos=all_cell_extends[j, 1],
+                selected_cell_extend_yneg=all_cell_extends[j, 2],
+                selected_cell_extend_ypos=all_cell_extends[j, 3],
+                selected_cell_extend_zneg=all_cell_extends[j, 4],
+                selected_cell_extend_zpos=all_cell_extends[j, 5],
+            )
+            sub_i = self._post_single_cut(sub_i)
+            assert self.unc_model is not None
+            unc, _ = self.unc_model.unc_predict(
+                atoms=copy.deepcopy(sub_i),
+                include_grad=False,
+            )
+            sub_i_list.append(sub_i)
+            unc_list.append(unc)
+        return sub_i_list, unc_list
+
     def _single_cut(
         self,
         atoms: Atoms,
         center_index: int,
         edge_indices: np.ndarray,
-        sub_cutoff: float,
         all_cell_extends: np.ndarray,
-        unc_model: UncModuleBase,
         num_process: int,
     ) -> Atoms:
         sub_i_naive = _naive_cut(atoms, center_index, edge_indices)
@@ -442,28 +475,24 @@ class CSCECutStrategy:
         sub_i_list = []
         unc_list = []
         if num_process == 1:
-            sub_i_list, unc_list = _try_all_cell_extends(
+            sub_i_list, unc_list = self._try_all_cell_extends(
                 sub=sub_i_naive,
                 centered_parent_pos=self._get_centered_parent_pos(atoms, center_index),
                 parent_symbols=atoms.get_chemical_symbols(),
-                cutoff=sub_cutoff,
                 center_index=center_index,
                 all_cell_extends=all_cell_extends,
-                unc_model=unc_model,
             )
         else:
             with mp.Pool(num_process) as pool:
                 results = [
                     pool.apply_async(
-                        _try_all_cell_extends,
+                        self._try_all_cell_extends,
                         args=(
                             sub_i_naive,
                             self._get_centered_parent_pos(atoms, center_index),
                             atoms.get_chemical_symbols(),
-                            sub_cutoff,
                             center_index,
                             all_cell_extends,
-                            unc_model,
                         ),
                     )
                     for _ in range(num_process)
@@ -504,12 +533,9 @@ class CSCECutStrategy:
                 atoms,
                 center_index,
                 edge_indices,
-                self.sub_cutoff,
                 self._generate_all_cell_extends(),
-                self.unc_model,
                 self.num_process,
             )
-            sub_i = self._post_single_cut(sub_i)
             if pbc:
                 sub_i.set_pbc(True)
             subs_list.append(sub_i)

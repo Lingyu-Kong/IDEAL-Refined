@@ -6,7 +6,7 @@ import torch
 from ase import Atoms
 from ase.constraints import FixAtoms
 from ase.io import read, write
-from ase.optimize import BFGS
+from ase.optimize import BFGS, FIRE2, LBFGS
 
 from ideal.ideal_calculator import IDEALCalculator
 from ideal.models.potential import Potential
@@ -28,15 +28,15 @@ def init_relax(args_dict: dict):
     symbols = atoms.get_chemical_symbols()
     NH_indices = [True if s == "N" or s == "H" else False for s in symbols]
     atoms.set_constraint(FixAtoms(indices=NH_indices))
-    opt = BFGS(atoms)
-    traj_file = args_dict["file"].split("/")[-1].split(".")[0] + "_relax_traj.xyz"
+    opt = LBFGS(atoms)
+    traj_file = args_dict["file"].split("/")[-1].replace(".xyz", "_relax_traj.xyz")
 
     def log_traj():
         print("Step: ", opt.get_number_of_steps())
         write(traj_file, atoms, append=True)
 
-    opt.attach(log_traj, interval=1)
-    opt.run(fmax=0.05, steps=1000)
+    opt.attach(log_traj, interval=20)
+    opt.run(fmax=0.02, steps=5000)
 
     write(
         f"../../contents/habor-bosch/particles/Relaxed_{args_dict['file'].split('/')[-1]}",
@@ -49,9 +49,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--file",
         type=str,
-        default="../../contents/habor-bosch/particles/Fe2125-K24-on_surface-326atmH2-326atmN2.xyz",
+        default="/nethome/lkong88/IDEAL/contents/habor-bosch/particles/FeLi-19.82A_surface110-100_degree0-3.xyz",
     )
-    parser.add_argument("--potential", type=str, default="MatterSim-v1.0.0-5M")
-    parser.add_argument("--device", type=int, default=0)
+    parser.add_argument("--potential", type=str, default="MatterSim-v1.0.0-1M")
+    parser.add_argument("--device", type=int, default=7)
     args = parser.parse_args()
     init_relax(vars(args))

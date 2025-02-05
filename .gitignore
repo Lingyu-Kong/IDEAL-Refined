@@ -4,3 +4,5 @@ build/
 *wandb/
 *vasp_run/
 *ideal_results*/
+*hidden/
+*results/
