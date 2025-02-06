@@ -4,6 +4,6 @@
 
 ```bash
 mamba env create -f environment.yaml -y
-conda activate mattersim
+conda activate ideal
 pip install -e .
 ```
