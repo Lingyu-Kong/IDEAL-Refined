@@ -4,10 +4,10 @@ import argparse
 import copy
 import json
 import os
-import rich
 
 import ase.units as units
 import numpy as np
+import rich
 import torch
 import wandb
 from ase import Atoms
@@ -118,7 +118,7 @@ def main(args_dict: dict):
                 custom_setting = json.load(f)
         else:
             custom_setting = None
-        abinitio_interface = VaspFakeInterfaceConfig(
+        abinitio_interface = VaspInterfaceConfig(
             user_incar_settings={
                 "IBRION": -1,  # 不进行离子弛豫
                 "ENCUT": 520,  # 能量截止
@@ -136,7 +136,7 @@ def main(args_dict: dict):
                 "LORBIT": 0,  # 不输出轨道信息
                 "MAGMOM": {
                     "Fe": 4.0,
-                    "K": 0.0,
+                    "Li": 0.0,
                     "N": 0.0,
                     "H": 0.0,
                 },
@@ -189,8 +189,10 @@ def main(args_dict: dict):
             ),
         )
 
-        initialize_atoms_list: list[Atoms] = read(args_dict["initialize_dataset"], ":") # type: ignore
-        initialize_atoms_list_single_point: list[Atoms] = read(args_dict["initialize_dataset_single_point"], ":") # type: ignore
+        initialize_atoms_list: list[Atoms] = read(args_dict["initialize_dataset"], ":")  # type: ignore
+        initialize_atoms_list_single_point: list[Atoms] = read(
+            args_dict["initialize_dataset_single_point"], ":"
+        )  # type: ignore
         calculator.initialize(
             model_initial_atoms_list=initialize_atoms_list,
             unc_initial_atoms_list=initialize_atoms_list_single_point,
@@ -199,10 +201,8 @@ def main(args_dict: dict):
         return calculator
 
     atoms: Atoms = read(args_dict["file"])  # type: ignore
-    base_element = args_dict["file"].split("/")[-1].split("-")[0]
-    base_element = "".join([i for i in base_element if not i.isdigit()])
-    promoter_element = args_dict["file"].split("/")[-1].split("-")[1]
-    promoter_element = "".join([i for i in promoter_element if not i.isdigit()])
+    base_element = args_dict["particle_element"]
+    promoter_element = args_dict["promoter_element"]
     calc = get_calculator()
     atoms.set_calculator(calc)
 
@@ -214,7 +214,7 @@ def main(args_dict: dict):
         friction=args_dict["friction"],
         fixcm=True,
     )
-    
+
     traj_dir = f"./md_results/{args_dict['temperature']}K_" + args_dict["file"].split(
         "/"
     )[-1].replace(".xyz", "")
@@ -236,16 +236,14 @@ def main(args_dict: dict):
         scaled_pos = dyn.atoms.get_scaled_positions()
         scaled_pos = np.mod(scaled_pos, 1)
         dyn.atoms.set_scaled_positions(scaled_pos)
-        
+
         delta_time = int(args_dict["timestep"] * args_dict["saveinterval"] / 1000)
         current_time = int(dyn.get_number_of_steps() * args_dict["timestep"] / 1000)
         current_file = f"{traj_dir}/{current_time}-{current_time + delta_time}ps.xyz"
         write(current_file, atoms, append=True)
-        
+
         coors = compute_coordination(
-            atoms, 
-            base_element=base_element, 
-            promoter_element=promoter_element
+            atoms, base_element=base_element, promoter_element=promoter_element
         )
         coors_log = {"Coor/" + k: v for k, v in coors.items()}
         if args_dict["wandb"]:
@@ -257,16 +255,20 @@ def main(args_dict: dict):
                 }
             )
 
-        if (dyn.get_number_of_steps() * args_dict["timestep"] + args_dict["loginterval"]) % args_dict["saveinterval"] == 0:
+        if (
+            dyn.get_number_of_steps() * args_dict["timestep"] + args_dict["loginterval"]
+        ) % args_dict["saveinterval"] == 0:
             calc.export_dataset(filename=sub_file)
             wandb.save(sub_file)
-            wandb.save(traj_dir)
+            wandb.save(current_file)
 
     dyn.attach(log_traj, interval=args_dict["loginterval"])
 
     if args_dict["wandb"]:
         wandb.login(key="37f3de06380e350727df28b49712f8b7fe5b14aa")
-        wandb.init(project="IDEAL-Habor-Bosch", config=args_dict, name=traj_dir.split("/")[-1])
+        wandb.init(
+            project="IDEAL-Habor-Bosch", config=args_dict, name=traj_dir.split("/")[-1]
+        )
     rich.print(args_dict)
     dyn.run(args_dict["md_steps"])
 
@@ -278,6 +280,8 @@ if __name__ == "__main__":
         type=str,
         default="../../contents/habor-bosch/particles/Relaxed_FeLi-19.82A_surface110-100_H2_793_N2_793.xyz",
     )
+    parser.add_argument("--particle_element", type=str, default="Fe")
+    parser.add_argument("--promoter_element", type=str, default="Li")
     # Uncertainty model configuration
     parser.add_argument("--soap_cutoff", type=float, default=3.5)
     parser.add_argument("--max_l", type=int, default=4)
@@ -298,19 +302,19 @@ if __name__ == "__main__":
     parser.add_argument("--sub_opt_grad_clip", type=float, default=1.0)
     parser.add_argument("--max_ideal_samples", type=int, default=20)
     # Cut strategy configuration
-    parser.add_argument("--sub_cutoff", type=float, default=4.5)
+    parser.add_argument("--sub_cutoff", type=float, default=4.0)
     parser.add_argument("--cell_extend_max", type=float, default=1.5)
     parser.add_argument("--cell_extend_zpos_min", type=float, default=0.0)
-    parser.add_argument("--cell_extend_zpos_max", type=float, default=3.0)
+    parser.add_argument("--cell_extend_zpos_max", type=float, default=2.0)
     parser.add_argument("--cut_scan_granularity", type=float, default=0.5)
     parser.add_argument("--num_process", type=int, default=16)
     parser.add_argument("--max_num_rs", type=int, default=1500)
     ## Uncertainty threshold configuration
-    parser.add_argument("--unc_threshold_method", type=str, default="percentile")
+    parser.add_argument("--unc_threshold_method", type=str, default="value")
     parser.add_argument("--unc_threshold_window_size", type=int, default=5000)
     parser.add_argument("--unc_threshold_alpha", type=float, default=0.5)
     parser.add_argument("--unc_threshold_k", type=float, default=2.0)
-    parser.add_argument("--unc_threshold_sigma", type=float, default=60.0)
+    parser.add_argument("--unc_threshold_sigma", type=float, default=40.0)
     # VASP configuration
     parser.add_argument("--vasp_npar", type=int, default=16)
     # Model configuration
@@ -320,7 +324,7 @@ if __name__ == "__main__":
     parser.add_argument("--IS_temperature_decay", type=float, default=0.05)
     parser.add_argument("--IS_temperature_min", type=float, default=0.1)
     parser.add_argument("--IS_key", type=str, default="f_mae")
-    parser.add_argument("--model_max_epochs", type=int, default=60)
+    parser.add_argument("--model_max_epochs", type=int, default=50)
     parser.add_argument("--model_batch_size", type=int, default=32)
     parser.add_argument("--model_lr", type=float, default=1e-4)
     parser.add_argument("--model_optimizer", type=str, default="adam")
@@ -330,14 +334,14 @@ if __name__ == "__main__":
     parser.add_argument("--timestep", type=float, default=0.5)
     parser.add_argument("--temperature", type=float, default=1400.0)
     parser.add_argument("--friction", type=float, default=0.1)
-    parser.add_argument("--md_steps", type=int, default=10000)
+    parser.add_argument("--md_steps", type=int, default=200000)
     parser.add_argument("--loginterval", type=int, default=2)
     parser.add_argument("--saveinterval", type=int, default=2000)
     ## Initialize Dataset
     parser.add_argument(
         "--initialize_dataset",
         type=str,
-        default="../../contents/habor-bosch/init_FeLi_single_point.xyz",
+        default="../../contents/habor-bosch/init_FeLi.xyz",
     )
     parser.add_argument(
         "--initialize_dataset_single_point",
