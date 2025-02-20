@@ -11,6 +11,7 @@ import numpy as np
 from ase import Atoms
 from ase.io import read
 from pymatgen.io.ase import AseAtomsAdaptor
+from pymatgen.io.vasp.outputs import Vasprun
 from pymatgen.io.vasp.sets import MPRelaxSet
 from typing_extensions import override
 
@@ -74,11 +75,22 @@ class VaspInterface(AbinitioInterfaceBase):
 
         # Read the output
         try:
-            labeled_atoms: Atoms = read(f"{self.vasp_run_dir}/vasprun.xml", index=-1)  # type: ignore
-            energy = labeled_atoms.get_potential_energy()
-            forces = labeled_atoms.get_forces()
-            stress = labeled_atoms.get_stress()
-            return labeled_atoms
+            vrun = Vasprun(
+                f"{self.vasp_run_dir}/vasprun.xml",
+                parse_eigen=False,
+                parse_projected_eigen=False,
+            )
+            if vrun.converged_electronic:
+                print("电子步已收敛！")
+                labeled_atoms: Atoms = read(
+                    f"{self.vasp_run_dir}/vasprun.xml", index=-1
+                )  # type: ignore
+                energy = labeled_atoms.get_potential_energy()
+                forces = labeled_atoms.get_forces()
+                stress = labeled_atoms.get_stress()
+                return labeled_atoms
+            else:
+                return None
         except Exception as e:
             return None
 
