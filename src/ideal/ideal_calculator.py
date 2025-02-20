@@ -65,6 +65,7 @@ class IDEALCalculator(Calculator):
         importance_sampling: ImportanceSamplingConfig | None = None,
         sub_sampler: SubSamplerConfig | None = None,
         include_indices: list[int] | None = None,
+        sample_interval: int = 1,
         max_samples: int | None = None,
         abinitio_interface: AbinitioInterfaceConfigBase | None = None,
         compute_stress: bool = True,
@@ -91,6 +92,8 @@ class IDEALCalculator(Calculator):
             self.max_samples = max_samples
         if abinitio_interface is not None:
             self.abinitio_interface = abinitio_interface.create_interface()
+        self.sample_interval = sample_interval
+        self.current_step = 0
         self.initialized = False
         self.data_buffer: list[Atoms] = []
         self.data_buffer_energies: list[float] = []
@@ -231,19 +234,26 @@ class IDEALCalculator(Calculator):
         self.data_buffer_energies = [
             atoms.get_potential_energy() for atoms in model_initial_atoms_list
         ]
-        self.data_buffer_forces = [np.array(atoms.get_forces()) for atoms in model_initial_atoms_list]
+        self.data_buffer_forces = [
+            np.array(atoms.get_forces()) for atoms in model_initial_atoms_list
+        ]
         self.data_buffer_stresses = [
-            np.array(atoms.get_stress(voigt=False)) for atoms in model_initial_atoms_list
+            np.array(atoms.get_stress(voigt=False))
+            for atoms in model_initial_atoms_list
         ]
         print(
             "Initializing IDEAL algorithm with {} structures".format(
                 len(self.data_buffer)
             )
         )
-        self.error_buffer = np.random.uniform(low=0.1, high=1.0, size=len(model_initial_atoms_list))
+        self.error_buffer = np.random.uniform(
+            low=0.1, high=1.0, size=len(model_initial_atoms_list)
+        )
         data_indices = list(range(len(model_initial_atoms_list)))
         shuffle_indices = np.random.permutation(data_indices).tolist()
-        loss_, e_mae, f_mae, s_mae = self._model_tune(shuffle_indices, max_epochs=200)
+        loss_, e_mae, f_mae, s_mae = self._model_tune(
+            shuffle_indices, max_epochs=self.model_tuning_config["max_epochs"]
+        )
         self._error_buffer_update(shuffle_indices, e_mae, f_mae, s_mae)
         if unc_initial_atoms_list is not None:
             for atoms in unc_initial_atoms_list:
@@ -331,57 +341,59 @@ class IDEALCalculator(Calculator):
         single_point_time = 0
         subs = []
         if self.mode.lower() == "ideal":
-            time1 = time.time()
-            subs = self.sub_sampler.sample(
-                atoms=atoms,  # type: ignore
-                include_indices=self.include_indices,
-                max_samples=self.max_samples,
-            )
-            sub_sample_time = time.time() - time1
+            if self.current_step % self.sample_interval == 0:
+                time1 = time.time()
+                subs = self.sub_sampler.sample(
+                    atoms=atoms,  # type: ignore
+                    include_indices=self.include_indices,
+                    max_samples=self.max_samples,
+                )
+                sub_sample_time = time.time() - time1
 
-            ## Label the subs and update the model
-            if len(subs) > 0:
-                time1 = time.time()
-                labeled_subs = []
-                for sub_label_idx, sub in enumerate(subs):
-                    labeled_sub = self.abinitio_interface.run(sub)
-                    if labeled_sub is not None:
-                        sub_energy = labeled_sub.get_potential_energy()
-                        sub_forces = labeled_sub.get_forces()
-                        labeled_subs.append(copy.deepcopy(labeled_sub))
-                    print(f"Sub {sub_label_idx + 1}/{len(subs)} labeled")
-                sub_label_time = time.time() - time1
-                time1 = time.time()
-                replay_indices = self._importance_sampling(
-                    size=max(
-                        len(labeled_subs),
-                        self.model_tuning_config["batch_size"] - len(labeled_subs),
+                ## Label the subs and update the model
+                if len(subs) > 0:
+                    time1 = time.time()
+                    labeled_subs = []
+                    for sub_label_idx, sub in enumerate(subs):
+                        labeled_sub = self.abinitio_interface.run(sub)
+                        if labeled_sub is not None:
+                            sub_energy = labeled_sub.get_potential_energy()
+                            sub_forces = labeled_sub.get_forces()
+                            labeled_subs.append(copy.deepcopy(labeled_sub))
+                        print(f"Sub {sub_label_idx + 1}/{len(subs)} labeled")
+                    sub_label_time = time.time() - time1
+                    time1 = time.time()
+                    replay_indices = self._importance_sampling(
+                        size=max(
+                            len(labeled_subs),
+                            self.model_tuning_config["batch_size"] - len(labeled_subs),
+                        )
+                    ).tolist()
+                    data_indices = replay_indices + list(
+                        range(
+                            len(self.data_buffer),
+                            len(self.data_buffer) + len(labeled_subs),
+                        )
                     )
-                ).tolist()
-                data_indices = replay_indices + list(
-                    range(
-                        len(self.data_buffer), len(self.data_buffer) + len(labeled_subs)
+                    self.data_buffer.extend(labeled_subs)
+                    self.data_buffer_energies.extend(
+                        [sub.get_potential_energy() for sub in labeled_subs]
                     )
-                )
-                self.data_buffer.extend(labeled_subs)
-                self.data_buffer_energies.extend(
-                    [sub.get_potential_energy() for sub in labeled_subs]
-                )
-                self.data_buffer_forces.extend(
-                    [np.array(sub.get_forces()) for sub in labeled_subs]
-                )
-                self.data_buffer_stresses.extend(
-                    [np.array(sub.get_stress(voigt=False)) for sub in labeled_subs]
-                )
-                self.data_buffer_exported = False
-                self.error_buffer = np.append(
-                    self.error_buffer,
-                    np.random.uniform(low=0.1, high=1.0, size=len(labeled_subs)),
-                )
-                shuffle_indices = np.random.permutation(data_indices).tolist()
-                loss_, e_mae, f_mae, s_mae = self._model_tune(shuffle_indices)
-                self._error_buffer_update(shuffle_indices, e_mae, f_mae, s_mae)
-                model_tune_time = time.time() - time1
+                    self.data_buffer_forces.extend(
+                        [np.array(sub.get_forces()) for sub in labeled_subs]
+                    )
+                    self.data_buffer_stresses.extend(
+                        [np.array(sub.get_stress(voigt=False)) for sub in labeled_subs]
+                    )
+                    self.data_buffer_exported = False
+                    self.error_buffer = np.append(
+                        self.error_buffer,
+                        np.random.uniform(low=0.1, high=1.0, size=len(labeled_subs)),
+                    )
+                    shuffle_indices = np.random.permutation(data_indices).tolist()
+                    loss_, e_mae, f_mae, s_mae = self._model_tune(shuffle_indices)
+                    self._error_buffer_update(shuffle_indices, e_mae, f_mae, s_mae)
+                    model_tune_time = time.time() - time1
         elif self.mode.lower() == "offline":
             pass
         else:
@@ -390,11 +402,13 @@ class IDEALCalculator(Calculator):
         time1 = time.time()
         energy, free_energy, forces, stress = self._single_point_calculation(atoms)  # type: ignore
         self.results.update(
-            energy=energy,
             free_energy=free_energy,
             forces=forces,
             stress=stress,
         )
+
+        self.current_step += 1
+
         single_point_time = time.time() - time1
 
         if self.wandb_log:

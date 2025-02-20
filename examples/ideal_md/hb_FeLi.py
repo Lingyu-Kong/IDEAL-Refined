@@ -136,7 +136,7 @@ def main(args_dict: dict):
                 "LORBIT": 0,  # 不输出轨道信息
                 "MAGMOM": {
                     "Fe": 4.0,
-                    "Li": 0.0,
+                    "Li": 0.6,
                     "N": 0.0,
                     "H": 0.0,
                 },
@@ -159,8 +159,8 @@ def main(args_dict: dict):
             max_samples=args_dict["max_ideal_samples"],
             abinitio_interface=abinitio_interface,
             include_indices=surface_indices,
+            sample_interval=args_dict["sample_interval"],
             compute_stress=False,
-            precision=args_dict["model_precision"],
             wandb_log=args_dict["wandb"],
             importance_sampling=cast(
                 ImportanceSamplingConfig,
@@ -215,9 +215,15 @@ def main(args_dict: dict):
         fixcm=True,
     )
 
-    traj_dir = f"./md_results/{args_dict['temperature']}K_" + args_dict["file"].split(
-        "/"
-    )[-1].replace(".xyz", "")
+    if args_dict["unc_threshold_method"] == "value":
+        unc_value = "value-" + str(args_dict["unc_threshold_sigma"])
+    else:
+        unc_value = "percentile-" + str(args_dict["unc_threshold_k"])
+    traj_dir = (
+        f"./md_results/{args_dict['temperature']}K_"
+        + unc_value
+        + args_dict["file"].split("/")[-1].replace(".xyz", "")
+    )
     if args_dict["fix_kernel"]:
         traj_dir = traj_dir + "_fixkernel"
 
@@ -237,8 +243,12 @@ def main(args_dict: dict):
         scaled_pos = np.mod(scaled_pos, 1)
         dyn.atoms.set_scaled_positions(scaled_pos)
 
-        delta_time = int(args_dict["timestep"] * args_dict["saveinterval"] / 1000)
-        current_time = int(dyn.get_number_of_steps() * args_dict["timestep"] / 1000)
+        delta_time = int(args_dict["timestep"] * args_dict["saveinterval"]) // 1000
+        current_time = (
+            int(dyn.get_number_of_steps() * args_dict["timestep"])
+            // delta_time
+            * delta_time
+        )
         current_file = f"{traj_dir}/{current_time}-{current_time + delta_time}ps.xyz"
         write(current_file, atoms, append=True)
 
@@ -278,7 +288,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--file",
         type=str,
-        default="../../contents/habor-bosch/particles/Relaxed_FeLi-19.82A_surface110-100_H2_793_N2_793.xyz",
+        default="/root/autodl-tmp/IDEAL-Refined/contents/habor-bosch/particles/Relaxed_FeLi-19.82A_surface110-100_H2_793_N2_793.xyz",
     )
     parser.add_argument("--particle_element", type=str, default="Fe")
     parser.add_argument("--promoter_element", type=str, default="Li")
@@ -311,10 +321,10 @@ if __name__ == "__main__":
     parser.add_argument("--max_num_rs", type=int, default=1500)
     ## Uncertainty threshold configuration
     parser.add_argument("--unc_threshold_method", type=str, default="value")
-    parser.add_argument("--unc_threshold_window_size", type=int, default=5000)
+    parser.add_argument("--unc_threshold_window_size", type=int, default=1000)
     parser.add_argument("--unc_threshold_alpha", type=float, default=0.5)
-    parser.add_argument("--unc_threshold_k", type=float, default=2.0)
-    parser.add_argument("--unc_threshold_sigma", type=float, default=40.0)
+    parser.add_argument("--unc_threshold_k", type=float, default=4.0)
+    parser.add_argument("--unc_threshold_sigma", type=float, default=20.0)
     # VASP configuration
     parser.add_argument("--vasp_npar", type=int, default=16)
     # Model configuration
@@ -326,22 +336,22 @@ if __name__ == "__main__":
     parser.add_argument("--IS_key", type=str, default="f_mae")
     parser.add_argument("--model_max_epochs", type=int, default=50)
     parser.add_argument("--model_batch_size", type=int, default=32)
-    parser.add_argument("--model_lr", type=float, default=1e-4)
+    parser.add_argument("--model_lr", type=float, default=1e-5)
     parser.add_argument("--model_optimizer", type=str, default="adam")
     parser.add_argument("--model_scheduler", type=str, default="steplr")
-    parser.add_argument("--model_precision", type=str, default="fp32")
     # MD configuration
     parser.add_argument("--timestep", type=float, default=0.5)
-    parser.add_argument("--temperature", type=float, default=1400.0)
+    parser.add_argument("--temperature", type=float, default=1450.0)
     parser.add_argument("--friction", type=float, default=0.1)
-    parser.add_argument("--md_steps", type=int, default=200000)
-    parser.add_argument("--loginterval", type=int, default=2)
-    parser.add_argument("--saveinterval", type=int, default=2000)
+    parser.add_argument("--md_steps", type=int, default=20000000)
+    parser.add_argument("--loginterval", type=int, default=20)
+    parser.add_argument("--sample_interval", type=int, default=20)
+    parser.add_argument("--saveinterval", type=int, default=200000)
     ## Initialize Dataset
     parser.add_argument(
         "--initialize_dataset",
         type=str,
-        default="../../contents/habor-bosch/init_FeLi.xyz",
+        default="../../contents/habor-bosch/init_FeLi_single_point.xyz",
     )
     parser.add_argument(
         "--initialize_dataset_single_point",

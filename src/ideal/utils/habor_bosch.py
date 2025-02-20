@@ -365,6 +365,18 @@ def compute_coordination(atoms, base_element: str, promoter_element: str):
     NH_coor = torch.sum(
         torch.sum((dist_mat < bond_cutoffs["NH"]) & NH_mask, dim=1)[N_mask].int()
     ).item()
+    NH_coor = 0
+    NH2_coor = 0
+    NH3_coor = 0
+    for i in range(n_atoms):
+        if N_mask[i]:
+            NH_num = torch.sum((dist_mat[i] < bond_cutoffs["NH"]) & H_mask).item()
+            if NH_num == 1:
+                NH_coor += 1
+            elif NH_num == 2:
+                NH2_coor += 1
+            elif NH_num == 3:
+                NH3_coor += 1
     baseN_coor = torch.sum(
         torch.sum((dist_mat < bond_cutoffs[base_element + "N"]) & baseN_mask, dim=1)[
             base_mask
@@ -390,6 +402,8 @@ def compute_coordination(atoms, base_element: str, promoter_element: str):
         "NN": NN_coor,
         "HH": HH_coor,
         "NH": NH_coor,
+        "NH2": NH2_coor,
+        "NH3": NH3_coor,
         base_element + "N": baseN_coor,
         base_element + "H": baseH_coor,
         promoter_element + "N": promoterN_coor,

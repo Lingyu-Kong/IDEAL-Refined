@@ -125,7 +125,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--particle_file",
         type=str,
-        default="/nethome/lkong88/IDEAL/contents/habor-bosch/particles/Relaxed_FeLi-19.82A_surface110-100.xyz",
+        default="/root/autodl-tmp/IDEAL-Refined/contents/habor-bosch/particles/Relaxed_FeLi-19.82A_surface110-100.xyz",
     )
     parser.add_argument("--H2_density", type=float, default=0.00402 * 2)
     parser.add_argument("--N2_density", type=float, default=0.00402 * 2)
